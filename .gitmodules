@@ -1,0 +1,6 @@
+[submodule "curlpp"]
+	path = submodules/curlpp
+	url = https://github.com/jpbarrette/curlpp.git
+[submodule "submodules/curl"]
+	path = submodules/curl
+	url = https://github.com/curl/curl.git
