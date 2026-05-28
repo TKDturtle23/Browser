@@ -12,7 +12,7 @@
 #include "Platform/Platform_win32.h"
 
 int main() {
-    std::string link = "https://tkdturtle23.github.io/AlterWebsite/"; // link should have a / at the end
+    std::string link = "https://example.com"; // link should have a / at the end
     auto platform =
         CreatePlatform();
 

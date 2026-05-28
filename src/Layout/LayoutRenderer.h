@@ -34,36 +34,70 @@ struct LayoutBox {
     std::vector<LayoutBox> children;
 };
 
+// ---------------------------------------------------------------------------
+//  FormattingContext — one subclass per layout model
+//
+//  To add a new model (flex, grid, …) subclass this and implement Layout().
+//  LayoutBlock() picks the right context based on the node's computed style.
+// ---------------------------------------------------------------------------
+class FormattingContext {
+public:
+    virtual ~FormattingContext() = default;
+
+    // Lay out all children of `node` starting at (contentX, contentY) inside
+    // a content area of `contentWidth` pixels.  Appends child boxes into
+    // `parent` and returns the Y coordinate just below the last child.
+    virtual int Layout(const Node& node,
+                       LayoutBox& parent,
+                       int contentX,
+                       int contentY,
+                       int contentWidth) = 0;
+};
+
+// ---------------------------------------------------------------------------
+//  LayoutRenderer
+// ---------------------------------------------------------------------------
 class LayoutRenderer {
 public:
-    LayoutRenderer(Renderer& renderer);
+    explicit LayoutRenderer(Renderer& renderer);
 
+    // Full layout + render pass driven by the DOM root.
     void Update(const Node& dom);
     void Render();
 
-private:
-    Renderer& renderer;
+    // Public so FormattingContext subclasses can reuse them.
+    Font& ResolveFont(const Style& s);
+
     Font BaseFont;
     Font BaseItalicFont;
     Font BaseBoldFont;
     Font BaseBoldItalicFont;
-
-
+    // Lay out a single block-level node.  Delegates child layout to the
+    // appropriate FormattingContext.
+    LayoutBox LayoutBlock(const Node& node,
+                          int containerX,
+                          int containerY,
+                          int containerWidth);
+private:
+    Renderer& renderer;
     LayoutBox root;
 
-    LayoutBox LayoutBlock(const Node& node, int containerX, int containerY, int containerWidth);
-    // Lays a contiguous run of inline-level siblings into line boxes.
-    // Returns the line boxes; advances *outNextY to the y just below the last line.
-    std::vector<LayoutBox> LayoutInline(
-        const std::vector<const Node*>& inlineRoots,
-        int startX,
-        int startY,
-        int containerWidth,
-        TextAlign textAlign,
-        int* outNextY);
+    // --- layout helpers ---
 
+
+
+    // --- render helpers ---
     void RenderBox(const LayoutBox& box);
-    Font& ResolveFont(const Style& s);
+    void RenderTextRun(const LayoutBox& box);
+    void RenderBlock(const LayoutBox& box);
+    void RenderLine(const LayoutBox& box);
+    void RenderDecoration(const LayoutBox& box,
+                          int startX, int endX,
+                          int baseline);
+
+    // Searches the layout tree for the first node with a background color and
+    // uses it as the window clear color.
+    Color FindWindowBackground() const;
 };
 
 
