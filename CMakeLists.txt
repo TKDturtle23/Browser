@@ -16,14 +16,26 @@ set(CURL_BROTLI OFF CACHE BOOL "" FORCE)
 set(USE_NGHTTP2 OFF CACHE BOOL "" FORCE)
 set(USE_LIBIDN2 OFF CACHE BOOL "" FORCE)
 
-add_subdirectory(submodules/curl)
-add_subdirectory(submodules/curlpp)
 
 add_executable(Browser
         src/main.cpp
+        src/CurlGrabber.h
+        src/CurlGrabber.cpp
+        src/Tokenizer.cpp
+        src/Parser.h
+        src/Parser.cpp
+        src/Platform/Platform_XCB.cpp
+        src/Platform/Platform.cpp
+        src/Render/Renderer.cpp
+        src/Text/Font.cpp
+        src/Layout/LayoutRenderer.cpp
+        src/CSS/CSSTokenizer.cpp
+        src/CSS/CSSParser.cpp
 )
+find_package(Freetype REQUIRED)
+find_package(CURL REQUIRED)
+target_link_libraries(Browser PRIVATE Freetype::Freetype)
 
-target_link_libraries(Browser PRIVATE
-        curlpp
-        libcurl
-)
+
+
+#target_link_libraries(Browser PRIVATE xcb CURL::libcurl)

@@ -1,0 +1,68 @@
+[
+{
+  "directory": "/root/projects/Browser/cmake-build-debug-wsl",
+  "command": "/usr/sbin/c++  -isystem /usr/include/freetype2 -g -fPIE -fdiagnostics-color=always -o CMakeFiles/Browser.dir/src/main.cpp.o -c /root/projects/Browser/src/main.cpp",
+  "file": "/root/projects/Browser/src/main.cpp",
+  "output": "CMakeFiles/Browser.dir/src/main.cpp.o"
+},
+{
+  "directory": "/root/projects/Browser/cmake-build-debug-wsl",
+  "command": "/usr/sbin/c++  -isystem /usr/include/freetype2 -g -fPIE -fdiagnostics-color=always -o CMakeFiles/Browser.dir/src/CurlGrabber.cpp.o -c /root/projects/Browser/src/CurlGrabber.cpp",
+  "file": "/root/projects/Browser/src/CurlGrabber.cpp",
+  "output": "CMakeFiles/Browser.dir/src/CurlGrabber.cpp.o"
+},
+{
+  "directory": "/root/projects/Browser/cmake-build-debug-wsl",
+  "command": "/usr/sbin/c++  -isystem /usr/include/freetype2 -g -fPIE -fdiagnostics-color=always -o CMakeFiles/Browser.dir/src/Tokenizer.cpp.o -c /root/projects/Browser/src/Tokenizer.cpp",
+  "file": "/root/projects/Browser/src/Tokenizer.cpp",
+  "output": "CMakeFiles/Browser.dir/src/Tokenizer.cpp.o"
+},
+{
+  "directory": "/root/projects/Browser/cmake-build-debug-wsl",
+  "command": "/usr/sbin/c++  -isystem /usr/include/freetype2 -g -fPIE -fdiagnostics-color=always -o CMakeFiles/Browser.dir/src/Parser.cpp.o -c /root/projects/Browser/src/Parser.cpp",
+  "file": "/root/projects/Browser/src/Parser.cpp",
+  "output": "CMakeFiles/Browser.dir/src/Parser.cpp.o"
+},
+{
+  "directory": "/root/projects/Browser/cmake-build-debug-wsl",
+  "command": "/usr/sbin/c++  -isystem /usr/include/freetype2 -g -fPIE -fdiagnostics-color=always -o CMakeFiles/Browser.dir/src/Platform/Platform_XCB.cpp.o -c /root/projects/Browser/src/Platform/Platform_XCB.cpp",
+  "file": "/root/projects/Browser/src/Platform/Platform_XCB.cpp",
+  "output": "CMakeFiles/Browser.dir/src/Platform/Platform_XCB.cpp.o"
+},
+{
+  "directory": "/root/projects/Browser/cmake-build-debug-wsl",
+  "command": "/usr/sbin/c++  -isystem /usr/include/freetype2 -g -fPIE -fdiagnostics-color=always -o CMakeFiles/Browser.dir/src/Platform/Platform.cpp.o -c /root/projects/Browser/src/Platform/Platform.cpp",
+  "file": "/root/projects/Browser/src/Platform/Platform.cpp",
+  "output": "CMakeFiles/Browser.dir/src/Platform/Platform.cpp.o"
+},
+{
+  "directory": "/root/projects/Browser/cmake-build-debug-wsl",
+  "command": "/usr/sbin/c++  -isystem /usr/include/freetype2 -g -fPIE -fdiagnostics-color=always -o CMakeFiles/Browser.dir/src/Render/Renderer.cpp.o -c /root/projects/Browser/src/Render/Renderer.cpp",
+  "file": "/root/projects/Browser/src/Render/Renderer.cpp",
+  "output": "CMakeFiles/Browser.dir/src/Render/Renderer.cpp.o"
+},
+{
+  "directory": "/root/projects/Browser/cmake-build-debug-wsl",
+  "command": "/usr/sbin/c++  -isystem /usr/include/freetype2 -g -fPIE -fdiagnostics-color=always -o CMakeFiles/Browser.dir/src/Text/Font.cpp.o -c /root/projects/Browser/src/Text/Font.cpp",
+  "file": "/root/projects/Browser/src/Text/Font.cpp",
+  "output": "CMakeFiles/Browser.dir/src/Text/Font.cpp.o"
+},
+{
+  "directory": "/root/projects/Browser/cmake-build-debug-wsl",
+  "command": "/usr/sbin/c++  -isystem /usr/include/freetype2 -g -fPIE -fdiagnostics-color=always -o CMakeFiles/Browser.dir/src/Layout/LayoutRenderer.cpp.o -c /root/projects/Browser/src/Layout/LayoutRenderer.cpp",
+  "file": "/root/projects/Browser/src/Layout/LayoutRenderer.cpp",
+  "output": "CMakeFiles/Browser.dir/src/Layout/LayoutRenderer.cpp.o"
+},
+{
+  "directory": "/root/projects/Browser/cmake-build-debug-wsl",
+  "command": "/usr/sbin/c++  -isystem /usr/include/freetype2 -g -fPIE -fdiagnostics-color=always -o CMakeFiles/Browser.dir/src/CSS/CSSTokenizer.cpp.o -c /root/projects/Browser/src/CSS/CSSTokenizer.cpp",
+  "file": "/root/projects/Browser/src/CSS/CSSTokenizer.cpp",
+  "output": "CMakeFiles/Browser.dir/src/CSS/CSSTokenizer.cpp.o"
+},
+{
+  "directory": "/root/projects/Browser/cmake-build-debug-wsl",
+  "command": "/usr/sbin/c++  -isystem /usr/include/freetype2 -g -fPIE -fdiagnostics-color=always -o CMakeFiles/Browser.dir/src/CSS/CSSParser.cpp.o -c /root/projects/Browser/src/CSS/CSSParser.cpp",
+  "file": "/root/projects/Browser/src/CSS/CSSParser.cpp",
+  "output": "CMakeFiles/Browser.dir/src/CSS/CSSParser.cpp.o"
+}
+]
