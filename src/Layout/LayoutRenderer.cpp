@@ -393,14 +393,33 @@ LayoutBox LayoutRenderer::LayoutBlock(const Node& node,
 {
     const Style& s = node.computedStyle;
 
-    // --- Geometry setup ------------------------------------------------------
     LayoutBox box;
-    box.kind  = BoxKind::Block;
-    box.node  = &node;
-    box.width = s.width >= 0
-        ? s.width
-        : containerWidth - s.margin_left - s.margin_right;
+    box.kind = BoxKind::Block;
+    box.node = &node;
 
+    // --- 1. Compute Horizontal Frame Padding/Borders -----------------------
+    int paddingX = s.padding_left + s.padding_right;
+    int borderX  = s.border.left + s.border.right;
+
+    // --- 2. Resolve Outer Box Width -----------------------------------------
+    if (s.width >= 0) {
+        if (s.boxSizing == BoxSizing::ContentBox) {
+            // Content-box: specified width is just the inside; expand outward
+            box.width = s.width + paddingX + borderX;
+        } else {
+            // Border-box: specified width is the final outer width
+            box.width = s.width;
+        }
+    } else {
+        // width: auto takes up all available space minus margins
+        box.width = containerWidth - s.margin_left - s.margin_right;
+    }
+
+    // --- 3. Apply Horizontal Constraints ------------------------------------
+    if (s.max_width >= 0) box.width = std::min(box.width, s.max_width);
+    if (s.min_width >= 0) box.width = std::max(box.width, s.min_width);
+
+    // --- 4. Position the Box Horizontally -----------------------------------
     if (s.margin_left_auto && s.margin_right_auto) {
         box.x = containerX + (containerWidth - box.width) / 2;
     } else {
@@ -408,31 +427,37 @@ LayoutBox LayoutRenderer::LayoutBlock(const Node& node,
     }
     box.y = containerY + s.margin_top;
 
-    int contentX = box.x + s.border.left + s.padding_left;
-    int contentY = box.y + s.border.top  + s.padding_top;
-    int contentWidth = box.width
-        - s.border.left - s.border.right
-        - s.padding_left - s.padding_right;
+    // --- 5. Determine Inner Content Context ---------------------------------
+    int contentX     = box.x + s.border.left + s.padding_left;
+    int contentY     = box.y + s.border.top  + s.padding_top;
+    int contentWidth = std::max(0, box.width - paddingX - borderX);
 
-    // --- Choose formatting context -------------------------------------------
-    // Add new display types here; everything else falls through to block.
+    // --- 6. Choose Formatting Context & Layout Children ---------------------
     std::unique_ptr<FormattingContext> ctx;
     switch (s.display) {
-        // case DisplayType::Flex:  ctx = std::make_unique<FlexFormattingContext>(*this); break;
-        // case DisplayType::Grid:  ctx = std::make_unique<GridFormattingContext>(*this); break;
         default: ctx = std::make_unique<BlockFormattingContext>(*this); break;
     }
 
-    // --- Lay out children ----------------------------------------------------
     int endY = ctx->Layout(node, box, contentX, contentY, contentWidth);
 
-    // --- Finalise box height -------------------------------------------------
-    box.height = s.height >= 0
-        ? s.height
-        : endY - contentY + s.padding_bottom + s.border.bottom;
+    // --- 7. Resolve Outer Box Height ----------------------------------------
+    int paddingY = s.padding_top + s.padding_bottom;
+    int borderY  = s.border.top + s.border.bottom;
 
-    if (s.min_height >= 0)
-        box.height = std::max(box.height, s.min_height);
+    if (s.height >= 0) {
+        if (s.boxSizing == BoxSizing::ContentBox) {
+            box.height = s.height + paddingY + borderY;
+        } else {
+            box.height = s.height;
+        }
+    } else {
+        // height: auto is determined by the bottom of the children content
+        box.height = (endY - contentY) + paddingY + borderY;
+    }
+
+    // --- 8. Apply Vertical Constraints --------------------------------------
+    if (s.max_height >= 0) box.height = std::min(box.height, s.max_height);
+    if (s.min_height >= 0) box.height = std::max(box.height, s.min_height);
 
     return box;
 }

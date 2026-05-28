@@ -383,7 +383,18 @@ void CSSParser::ApplyDeclarations(const std::vector<CSSDeclaration> &decls,
             node.specifiedStyle.set.height = true;
             node.specifiedStyle.min_height = ParseValue(v, vw, vh);
         }
-
+        else if (p == "max-height") {
+            node.specifiedStyle.set.height = true;
+            node.specifiedStyle.max_height = ParseValue(v, vw, vh);
+        }
+        else if (p == "min-width") {
+            node.specifiedStyle.set.width = true;
+            node.specifiedStyle.min_width = ParseValue(v, vw, vh);
+        }
+        else if (p == "max-width") {
+            node.specifiedStyle.set.width = true;
+            node.specifiedStyle.max_width = ParseValue(v, vw, vh);
+        }
         // ── text alignment ────────────────────────────────────────────────
 
         else if (p == "text-align")
@@ -458,6 +469,12 @@ void CSSParser::ApplyDeclarations(const std::vector<CSSDeclaration> &decls,
         else if (p == "float")
         {
             // ignored for now
+        }
+        else if (p == "box-sizing") {
+            if (v == "border-box")
+                node.specifiedStyle.boxSizing = BoxSizing::BorderBox;
+            else if (v == "content-box")
+                node.specifiedStyle.boxSizing = BoxSizing::ContentBox;
         }
     }
 }

@@ -56,6 +56,10 @@ enum class TextDecorationStyle {
     Dashed,
     Wavy,
 };
+enum class BoxSizing {
+    ContentBox,
+    BorderBox
+};
 struct StyleSetFlags {
     bool font_size : 1 = false;
     bool color : 1 = false;
@@ -83,6 +87,8 @@ struct Style {
     DisplayType display = DisplayType::Inline;
     PositionType position = PositionType::Static;
 
+    BoxSizing boxSizing = BoxSizing::ContentBox;
+
     int margin_top = 0;
     int margin_bottom = 0;
     int margin_left = 0;
@@ -101,6 +107,11 @@ struct Style {
     int offset_y = 0;
 
     int min_height = -1; // -1 = no minimum
+    int max_height = -1; // -1 = no maximum
+
+    int min_width = -1;
+    int max_width = -1;
+
     TextDecoration textDecoration = TextDecoration::None;
     Color TextDecorationColor = Color(0, 0, 0);
     int TextDecorationThickness = 1;
