@@ -4,6 +4,3 @@
 [submodule "submodules/curl"]
     path = submodules/curl
     url = https://github.com/curl/curl.git
-[submodule "submodules/curlpp"]
-    path = submodules/curlpp
-    url = https://github.com/sn1c/curlpp.git

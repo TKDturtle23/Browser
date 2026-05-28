@@ -1,6 +1,7 @@
 
 #include "Renderer.h"
 #include <algorithm>
+#include <cmath>
 
 
 
@@ -60,6 +61,87 @@ void Renderer::DrawRect(
     // right
     for (int py = y; py < y + h; py++) {
         DrawPixel(x + w - 1, py, color);
+    }
+}
+void Renderer::DrawLine(int x0, int y0, int x1, int y1, Color color) {
+    int dx = std::abs(x1 - x0);
+    int sx = (x0 < x1) ? 1 : -1;
+
+    int dy = -std::abs(y1 - y0);
+    int sy = (y0 < y1) ? 1 : -1;
+
+    int err = dx + dy; // error term
+
+    while (true) {
+        DrawPixel(x0, y0, color);
+
+        if (x0 == x1 && y0 == y1)
+            break;
+
+        int e2 = 2 * err;
+
+        if (e2 >= dy) {
+            err += dy;
+            x0 += sx;
+        }
+
+        if (e2 <= dx) {
+            err += dx;
+            y0 += sy;
+        }
+    }
+}
+
+void Renderer::DrawWavyLine(
+    int x0, int y0,
+    int x1, int y1,
+    float amplitude,
+    float frequency,
+    int thickness,
+    Color color
+) {
+    // Direction vector
+    float dx = static_cast<float>(x1 - x0);
+    float dy = static_cast<float>(y1 - y0);
+
+    float length = std::sqrt(dx * dx + dy * dy);
+    if (length == 0) return;
+
+    // Normalize direction
+    float ux = dx / length;
+    float uy = dy / length;
+
+    // Perpendicular vector (for wave offset + thickness)
+    float px = -uy;
+    float py = ux;
+
+    for (int i = 0; i <= static_cast<int>(length); i++) {
+        float t = i / length;
+
+        // Base line point
+        float bx = x0 + ux * i;
+        float by = y0 + uy * i;
+
+        // Sine wave offset
+        float offset = std::sin(t * frequency * 2.0f * 3.14159265f) * amplitude;
+
+        float wx = bx + px * offset;
+        float wy = by + py * offset;
+
+        // Draw thickness (disk)
+        int r = thickness / 2;
+
+        for (int oy = -r; oy <= r; oy++) {
+            for (int ox = -r; ox <= r; ox++) {
+                if (ox * ox + oy * oy <= r * r) {
+                    DrawPixel(
+                        static_cast<int>(wx) + ox,
+                        static_cast<int>(wy) + oy,
+                        color
+                    );
+                }
+            }
+        }
     }
 }
 void Renderer::FillRectWithBorder(

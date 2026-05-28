@@ -12,7 +12,7 @@
 #include <memory>
 
 class Platform;
-
+#include <functional>
 std::unique_ptr<Platform>
 CreatePlatform();
 #include "../Color.h"
@@ -65,4 +65,8 @@ public:
     virtual int GetHeight() const = 0;
 
     virtual bool IsRunning() const = 0;
+
+    bool resizing = false;
+    bool needsRedraw = false;
+    std::function<void()> onRender;
 };

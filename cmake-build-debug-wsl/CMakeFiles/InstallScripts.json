@@ -1,7 +1,0 @@
-{
-	"InstallScripts" : 
-	[
-		"/root/projects/Browser/cmake-build-debug-wsl/cmake_install.cmake"
-	],
-	"Parallel" : false
-}

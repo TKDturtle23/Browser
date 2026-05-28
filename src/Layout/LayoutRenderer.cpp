@@ -9,8 +9,10 @@
 #include <iostream>
 #include <unordered_set>
 
-LayoutRenderer::LayoutRenderer(Renderer& renderer, Font& font)
-    : renderer(renderer), font(font) {}
+LayoutRenderer::LayoutRenderer(Renderer& renderer)
+    : renderer(renderer), BaseFont("arial/ARIAL.TTF", 16), BaseItalicFont("arial/ARIALI.TTF", 16), BaseBoldFont("arial/ARIALBD.TTF", 16),
+    BaseBoldItalicFont("arial/ARIALBI.TTF", 16){
+}
 
 static bool IsBlank(const std::string& s) {
     return std::all_of(s.begin(), s.end(), [](char c) {
@@ -50,14 +52,27 @@ namespace {
         std::string text;
         int width;
         bool hasSpaceBefore;
-        int fontSize; // add this
+        int fontSize;
+        bool bold;
+        bool italic;
     };
 
 struct WordCollector {
-    Font& font;
+    Font& BaseFont;
+    Font& BaseItalicFont;
+    Font& BaseBoldFont;
+    Font& BaseBoldItalicFont;
     std::vector<Word>& out;
     bool pendingSpace = false;
-
+    Font & ResolveFont(const Style &s) { // copied from LayoutRenderer
+        if (s.font_bold && s.font_italic)
+            return BaseBoldItalicFont;
+        if (s.font_bold)
+            return BaseBoldFont;
+        if (s.font_italic)
+            return BaseItalicFont;
+        return BaseFont;
+    }
     static int MeasureRun(Font& font, const std::string& s) {
         int w = 0;
         char prev = 0;
@@ -73,11 +88,17 @@ struct WordCollector {
     }
 
     void Visit(const Node& node) {
+        const Style* s = node.parent ? &node.parent->computedStyle : nullptr;
+        Font& font = ResolveFont(*s);
+
         if (node.type == NodeType::Element && IsNonRendered(node.tag)) return;
 
         if (node.type == NodeType::Text) {
-            if (node.parent && node.parent->computedStyle.font_size > 0)
-                font.SetSize(node.parent->computedStyle.font_size);
+
+
+            int size = (s && s->font_size > 0) ? s->font_size : 16;
+            font.SetSize(size);
+
             const std::string& t = node.text;
             size_t i = 0;
             while (i < t.size()) {
@@ -97,6 +118,11 @@ struct WordCollector {
                     w.width = MeasureRun(font, w.text);
                     w.hasSpaceBefore = pendingSpace;
                     w.fontSize = font.GetCurrentSize();
+
+                    if (node.parent) {
+                        w.bold = node.parent->computedStyle.font_bold;
+                        w.italic = node.parent->computedStyle.font_italic;
+                    }
                     out.push_back(std::move(w));
                     pendingSpace = false;
                 }
@@ -128,9 +154,25 @@ std::vector<LayoutBox> LayoutRenderer::LayoutInline(
     TextAlign textAlign,
     int* outNextY)
 {
+    auto finalizeLineMetrics = [&](LayoutBox& line) {
+        int ascent = 0;
+        int descent = 0;
+
+        for (const auto& run : line.children) {
+            Font& font = ResolveFont(run.node->parent->computedStyle);
+            font.SetSize(run.fontSize);
+            FontMetrics m = font.GetMetrics();
+
+            ascent = std::max(ascent, m.ascent);
+            descent = std::max(descent, m.descent);
+        }
+
+        line.lineAscent = ascent;
+        line.lineDescent = descent;
+    };
     std::vector<Word> words;
     {
-        WordCollector wc{font, words};
+        WordCollector wc{BaseFont, BaseItalicFont, BaseBoldFont, BaseBoldItalicFont, words};
         for (const Node* n : inlineRoots) {
             wc.Visit(*n);
         }
@@ -138,11 +180,12 @@ std::vector<LayoutBox> LayoutRenderer::LayoutInline(
 
     std::vector<LayoutBox> lines;
 
-    FontMetrics m = font.GetMetrics();
+    FontMetrics m = BaseFont.GetMetrics();
     int lineHeight = m.lineHeight;
-    int spaceWidth = font.GetGlyph(' ').advance;
+    int spaceWidth = BaseFont.GetGlyph(' ').advance;
     int rightEdge = startX + containerWidth;
-
+    int lineAscent = 0;
+    int lineDescent = 0;
     auto newLine = [&](int y) {
         LayoutBox line;
         line.kind = BoxKind::Line;
@@ -150,6 +193,7 @@ std::vector<LayoutBox> LayoutRenderer::LayoutInline(
         line.y = y;
         line.width = containerWidth;
         line.height = lineHeight; // will be updated by finalizeLineHeight
+
         return line;
     };
 
@@ -168,6 +212,7 @@ std::vector<LayoutBox> LayoutRenderer::LayoutInline(
 
         if (lineHasContent && cursorX + gap + w.width > rightEdge) {
             finalizeLineHeight(currentLine);
+            finalizeLineMetrics(currentLine);
             lines.push_back(std::move(currentLine));
             currentLine = newLine(lines.back().y + lines.back().height);
             cursorX = startX;
@@ -182,8 +227,10 @@ std::vector<LayoutBox> LayoutRenderer::LayoutInline(
         run.y = currentLine.y;
         run.width = w.width;
         run.fontSize = w.fontSize;  // store it
+        Font& font = ResolveFont(w.node->parent->computedStyle);
         font.SetSize(w.fontSize);
         FontMetrics wm = font.GetMetrics();
+
         run.height = wm.lineHeight;
         run.node = w.node;
         run.text = w.text;
@@ -194,6 +241,7 @@ std::vector<LayoutBox> LayoutRenderer::LayoutInline(
 
     if (!currentLine.children.empty()) {
         finalizeLineHeight(currentLine);
+        finalizeLineMetrics(currentLine);
         lines.push_back(std::move(currentLine));
     }
 
@@ -216,7 +264,9 @@ std::vector<LayoutBox> LayoutRenderer::LayoutInline(
         }
     }
 
-    *outNextY = lines.empty() ? startY : (lines.back().y + lineHeight);
+    *outNextY = lines.empty()
+    ? startY
+    : (lines.back().y + lines.back().height);
     return lines;
 }
 
@@ -311,7 +361,27 @@ LayoutBox LayoutRenderer::LayoutBlock(const Node& node, int containerX, int cont
 }
 #include <functional>
 void LayoutRenderer::Update(const Node& dom) {
-    root = LayoutBlock(dom, 0, 0, renderer.GetWidth());
+    // find body
+    const Node* body = nullptr;
+
+    std::function<const Node*(const Node&)> findBody =
+        [&](const Node& n) -> const Node* {
+            for (const auto& child : n.children) {
+                if (child->tag == "body") {
+                    return child.get();
+                }
+
+                if (const Node* result = findBody(*child)) {
+                    return result;
+                }
+            }
+
+            return nullptr;
+    };
+
+    body = findBody(dom);
+
+    root = LayoutBlock(*body, 0, 0, renderer.GetWidth());
     root.height = std::max(root.height, renderer.GetHeight());
 
     for (auto& child : root.children) {
@@ -324,6 +394,7 @@ void LayoutRenderer::Update(const Node& dom) {
 }
 void LayoutRenderer::RenderBox(const LayoutBox& box) {
     if (box.kind == BoxKind::TextRun) {
+        Font& font = ResolveFont(box.node->parent->computedStyle);
         if (box.fontSize > 0)
             font.SetSize(box.fontSize);
         Color textColor(0, 0, 0);
@@ -335,7 +406,7 @@ void LayoutRenderer::RenderBox(const LayoutBox& box) {
 
         int cursorX = box.x;
         char prev = 0;
-
+        int StartX = cursorX;
         for (char c : box.text) {
             const Glyph& g = font.GetGlyph(c);
 
@@ -354,6 +425,7 @@ void LayoutRenderer::RenderBox(const LayoutBox& box) {
             cursorX += g.advance;
             prev = c;
         }
+
         return;
     }
 
@@ -382,10 +454,152 @@ void LayoutRenderer::RenderBox(const LayoutBox& box) {
                 renderer.FillRect(box.x + box.width - b.right, box.y, b.right, box.height, b.color);
         }
     }
+    if (box.kind == BoxKind::Line) {
+        bool underline = false;
+        bool lineThrough = false;
+        int thickness = 1;
+        TextDecorationStyle style = TextDecorationStyle::Solid;
+        Color text_decoration_color(0, 0, 0);
+        // find any text decoration in the line
+        for (const auto& run : box.children) {
+            thickness = run.node->parent->computedStyle.TextDecorationThickness;
+            text_decoration_color = run.node->parent->computedStyle.TextDecorationColor;
+            style = run.node->parent->computedStyle.textDecorationStyle;
+            if (run.node && run.node->parent &&
+                run.node->parent->computedStyle.textDecoration == TextDecoration::Underline) {
+                underline = true;
+                break;
+                }
+            if (run.node && run.node->parent &&
+                run.node->parent->computedStyle.textDecoration == TextDecoration::LineThrough) {
+                lineThrough = true;
+                break;
+                }
+        }
 
+        int startX = box.children.front().x;
+        const LayoutBox& last = box.children.back();
+        int endX = last.x + last.width;
+        if ((underline || lineThrough) && !box.children.empty()) {
+        Font& font = ResolveFont(box.children.front().node->parent->computedStyle);
+        FontMetrics m = font.GetMetrics();
+        int baseline = box.y + box.lineAscent; // <-- use stored ascent, not font lookup
+        int y;
+        if (underline) {
+            y = baseline + 2;
+        } else if (lineThrough) {
+            y = box.y + (box.lineAscent + box.lineDescent) / 2;
+        }
+        if (!box.children.empty()) {
+            switch (style) {
+                case TextDecorationStyle::Solid: {
+                    for (int i = 0; i < thickness; i++) {
+                        renderer.DrawLine(startX, y, endX, y, text_decoration_color);
+                        y += 1;
+                    } break;
+                }
+                case TextDecorationStyle::Double: {
+                    for (int i = 0; i < thickness; i++) {
+                        renderer.DrawLine(startX, y, endX, y, text_decoration_color);
+                        y += 1;
+                    }
+                    y += thickness / 2;
+                    for (int i = 0; i < thickness; i++) {
+                        renderer.DrawLine(startX, y, endX, y, text_decoration_color);
+                        y += 1;
+                    }
+                    break;
+                }
+                case TextDecorationStyle::Dotted: {
+                    int radius = std::max(1, thickness / 2);
+
+                    // distance between dot centers
+                    int spacing = thickness * 2;
+
+                    for (int cx = startX; cx <= endX; cx += spacing) {
+
+                        // draw filled circle
+                        for (int oy = -radius; oy <= radius; oy++) {
+                            for (int ox = -radius; ox <= radius; ox++) {
+
+                                if (ox * ox + oy * oy <= radius * radius) {
+                                    renderer.DrawPixel(
+                                        cx + ox,
+                                        y + oy,
+                                        text_decoration_color
+                                    );
+                                }
+                            }
+                        }
+                    }
+
+                    break;
+                }
+
+                case TextDecorationStyle::Dashed: {
+                    int dashLength = std::max(4, thickness * 4);
+                    int gapLength  = std::max(2, thickness * 2);
+
+                    for (int ty = 0; ty < thickness; ty++) {
+
+                        int x = startX;
+
+                        while (x < endX) {
+                            int dashEnd = std::min(x + dashLength, endX);
+
+                            renderer.DrawLine(
+                                x,
+                                y + ty,
+                                dashEnd,
+                                y + ty,
+                                text_decoration_color
+                            );
+
+                            x += dashLength + gapLength;
+                        }
+                    }
+
+                    break;
+                }
+
+                case TextDecorationStyle::Wavy: {
+                    float amplitude = std::max(1.5f, thickness * 1.5f);
+
+                    // number of wave cycles across the line
+                    float frequency =
+                        static_cast<float>(endX - startX) / 24.0f;
+
+                    renderer.DrawWavyLine(
+                        startX,
+                        y + amplitude + 1,
+                        endX,
+                        y + amplitude + 1,
+                        amplitude,
+                        frequency,
+                        thickness,
+                        text_decoration_color
+                    );
+
+                    break;
+                }
+            }
+        }
+        }
+
+    }
     for (const auto& child : box.children) {
         RenderBox(child);
     }
+}
+
+Font & LayoutRenderer::ResolveFont(const Style &s) {
+    if (s.font_bold && s.font_italic)
+        return BaseBoldItalicFont;
+    if (s.font_bold)
+        return BaseBoldFont;
+    if (s.font_italic)
+        return BaseItalicFont;
+    return BaseFont;
 }
 
 // in Render(), replace Clear with:

@@ -40,6 +40,45 @@ struct Border {
 
     bool any() const { return top || right || bottom || left; }
 };
+enum class TextDecoration {
+    None,
+    Underline,
+    Overline,
+    LineThrough,
+    blink,
+    spellingError,
+    GrammarError,
+};
+enum class TextDecorationStyle {
+    Solid,
+    Double,
+    Dotted,
+    Dashed,
+    Wavy,
+};
+struct StyleSetFlags {
+    bool font_size : 1 = false;
+    bool color : 1 = false;
+    bool display : 1 = false;
+    bool textAlign : 1 = false;
+    bool font_bold : 1 = false;
+    bool font_italic : 1 = false;
+
+    bool margin_top : 1 = false;
+    bool margin_bottom : 1 = false;
+    bool margin_left : 1 = false;
+    bool margin_right : 1 = false;
+
+    bool padding_top : 1 = false;
+    bool padding_bottom : 1 = false;
+    bool padding_left : 1 = false;
+    bool padding_right : 1 = false;
+
+    bool width : 1 = false;
+    bool height : 1 = false;
+
+    bool background : 1 = false;
+};
 struct Style {
     DisplayType display = DisplayType::Inline;
     PositionType position = PositionType::Static;
@@ -62,11 +101,21 @@ struct Style {
     int offset_y = 0;
 
     int min_height = -1; // -1 = no minimum
+    TextDecoration textDecoration = TextDecoration::None;
+    Color TextDecorationColor = Color(0, 0, 0);
+    int TextDecorationThickness = 1;
+    TextDecorationStyle textDecorationStyle = TextDecorationStyle::Solid;
+
+
 
     std::string font_family;
-    int font_size = 16;
+    int font_size = 0;
+
     bool font_bold = false;
     bool font_italic = false;
+
+
+
     bool margin_left_auto  = false;
     bool margin_right_auto = false;
     Color backgroundColor = Color(255, 255, 255); // or make Optional if you want transparency
@@ -75,6 +124,8 @@ struct Style {
 
     float font_size_em = 0.0f; // non-zero means "resolve as em during ComputeStyle"
     TextAlign textAlign = TextAlign::Left;
+
+    StyleSetFlags set;
 };
 
 
@@ -91,6 +142,7 @@ struct Node {
 
     Style computedStyle;
     Style specifiedStyle;
+
 
     Node() = default;
     ~Node() = default;

@@ -19,4 +19,6 @@ struct Color {
           g(green),
           r(red),
           a(alpha) {}
+
+    bool operator==(const Color & color) const = default;
 };

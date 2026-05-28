@@ -9,8 +9,10 @@
 #include "Platform/Platform.h"
 #include "Render/Renderer.h"
 #include "Layout/LayoutRenderer.h"
-int main() {
+#include "Platform/Platform_win32.h"
 
+int main() {
+    std::string link = "https://tkdturtle23.github.io/AlterWebsite/"; // link should have a / at the end
     auto platform =
         CreatePlatform();
 
@@ -31,7 +33,7 @@ int main() {
     CurlGrabber grabber;
     grabber.Init();
 
-    Grab response = grabber.GetData("https://www.example.com");
+    Grab response = grabber.GetData(link);
     std::cout << response.data << std::endl;
 
     Tokenizer tokenizer;
@@ -42,15 +44,27 @@ int main() {
     parser.PrintNode(dom);
 
     // apply CSS + layout separately so both can be re-run on resize
-    Font font("arial/ARIAL.TTF", 32);
-    LayoutRenderer layout(renderer, font);
+
+    LayoutRenderer layout(renderer);
 
     auto applyAndLayout = [&]() {
         // re-apply CSS with current viewport size
         CSSParser cssParser;
         std::vector<CSSRule> rules;
         std::function<void(Node&)> collectStyles = [&](Node& node) {
-            if (node.type == NodeType::Element && node.tag == "style") {
+            auto it = node.attributes.find("rel");
+            if (node.type == NodeType::Element && (node.tag == "style" || (it != node.attributes.end() && it->second == "stylesheet"))) {
+                if (it != node.attributes.end()) // link
+                {
+                    auto ref = node.attributes.find("href");
+                    if (ref != node.attributes.end()) {
+                        std::cout << "Loading " << ref->second << std::endl;
+                        auto response = grabber.GetData(link + ref->second);
+                        auto parsed = cssParser.Parse(response.data);
+                        rules.insert(rules.end(), parsed.begin(), parsed.end());
+                    }
+
+                }
                 for (auto& child : node.children)
                     if (child->type == NodeType::Text)
                         for (auto& rule : cssParser.Parse(child->text))
@@ -75,19 +89,36 @@ int main() {
     };
 
     applyAndLayout();
+    platform->onRender = [&]() {
+        renderer.Resize(platform->GetWidth(), platform->GetHeight());
+        applyAndLayout();
 
+        layout.Render();
+        renderer.Present();
+        platform->Present(renderer.GetFrontBuffer());
+    };
     while (platform->IsRunning()) {
+
         Event event;
         while (platform->PollEvent(event)) {
             if (event.type == EventType::Resize) {
                 renderer.Resize(event.width, event.height);
                 applyAndLayout();
+                std::cout << "Resized to " << event.width << "x" << event.height << std::endl;
             }
         }
 
-        layout.Render();
-        renderer.Present();
-        platform->Present(renderer.GetFrontBuffer());
+        if (platform->needsRedraw) {
+            platform->needsRedraw = false;
+
+            layout.Render();
+            renderer.Present();
+            platform->Present(renderer.GetFrontBuffer());
+        }
+
+        // keep message pump alive
+        Sleep(0);
+
     }
     return 0;
 }

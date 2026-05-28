@@ -4,6 +4,7 @@
 
 #include "CurlGrabber.h"
 
+#include <iostream>
 #include <curl/curl.h>
 #include <sstream>
 #include <string>
@@ -18,6 +19,7 @@ static size_t WriteCallback(void* contents, size_t size, size_t nmemb, void* use
 
 void CurlGrabber::Init() {
     curl_global_init(CURL_GLOBAL_DEFAULT);
+    std::cout << curl_version() << std::endl;
 }
 
 Grab CurlGrabber::GetData(std::string link) {
@@ -38,7 +40,13 @@ Grab CurlGrabber::GetData(std::string link) {
     CURLcode res = curl_easy_perform(curl);
 
     if (res != CURLE_OK) {
+
+        std::cerr
+            << curl_easy_strerror(res)
+            << std::endl;
+
         curl_easy_cleanup(curl);
+
         return {""};
     }
 

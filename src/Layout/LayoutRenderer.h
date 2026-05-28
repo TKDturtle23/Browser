@@ -23,6 +23,8 @@ struct LayoutBox {
     int height = 0;
     int fontSize = 0; // for TextRun boxes
 
+    int lineAscent = 0;
+    int lineDescent = 0;
 
     const Node* node = nullptr;
 
@@ -34,19 +36,22 @@ struct LayoutBox {
 
 class LayoutRenderer {
 public:
-    LayoutRenderer(Renderer& renderer, Font& font);
+    LayoutRenderer(Renderer& renderer);
 
     void Update(const Node& dom);
     void Render();
 
 private:
     Renderer& renderer;
-    Font& font;
+    Font BaseFont;
+    Font BaseItalicFont;
+    Font BaseBoldFont;
+    Font BaseBoldItalicFont;
+
 
     LayoutBox root;
 
     LayoutBox LayoutBlock(const Node& node, int containerX, int containerY, int containerWidth);
-
     // Lays a contiguous run of inline-level siblings into line boxes.
     // Returns the line boxes; advances *outNextY to the y just below the last line.
     std::vector<LayoutBox> LayoutInline(
@@ -58,6 +63,7 @@ private:
         int* outNextY);
 
     void RenderBox(const LayoutBox& box);
+    Font& ResolveFont(const Style& s);
 };
 
 

@@ -97,6 +97,7 @@ static Style DefaultStyleForTag(const std::string& tag)
         s.display = DisplayType::Block;
         s.margin_top = 8;
         s.margin_bottom = 8;
+
     }
     else if (tag == "body")
     {
@@ -241,8 +242,14 @@ void ComputeStyle(Node& node, const Style* parentStyle)
     result.height = tagDefaults.height;
     result.margin_left_auto  = tagDefaults.margin_left_auto;
     result.margin_right_auto = tagDefaults.margin_right_auto;
+
 // 3. Apply author-specified styles (highest priority).
 ApplyAttributes(node);
+
+    result.textDecoration = node.specifiedStyle.textDecoration;
+    result.TextDecorationColor = node.specifiedStyle.TextDecorationColor;
+    result.TextDecorationThickness = node.specifiedStyle.TextDecorationThickness;
+    result.textDecorationStyle = node.specifiedStyle.textDecorationStyle;
 
 if (node.specifiedStyle.font_size != 0)
     result.font_size = node.specifiedStyle.font_size;

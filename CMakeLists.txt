@@ -2,6 +2,8 @@ cmake_minimum_required(VERSION 4.2)
 
 project(Browser)
 
+
+set(CMAKE_TRY_COMPILE_TARGET_TYPE STATIC_LIBRARY)
 set(CMAKE_CXX_STANDARD 20)
 
 # Must be BEFORE add_subdirectory()
@@ -9,13 +11,17 @@ set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 
 set(BUILD_SHARED_LIBS OFF)
 set(CURL_STATICLIB ON)
-
+set(BUILD_DOCS OFF CACHE BOOL "" FORCE)
+set(BUILD_MISC_DOCS OFF CACHE BOOL "" FORCE)
+set(ENABLE_CURL_MANUAL OFF CACHE BOOL "" FORCE)
+set(CURL_USE_SCHANNEL ON CACHE BOOL "" FORCE)
 set(CURL_USE_LIBPSL OFF CACHE BOOL "" FORCE)
 set(CURL_ZSTD OFF CACHE BOOL "" FORCE)
 set(CURL_BROTLI OFF CACHE BOOL "" FORCE)
 set(USE_NGHTTP2 OFF CACHE BOOL "" FORCE)
 set(USE_LIBIDN2 OFF CACHE BOOL "" FORCE)
-
+add_subdirectory(submodules/curl)
+add_subdirectory(submodules/freetype)
 
 add_executable(Browser
         src/main.cpp
@@ -31,10 +37,9 @@ add_executable(Browser
         src/Layout/LayoutRenderer.cpp
         src/CSS/CSSTokenizer.cpp
         src/CSS/CSSParser.cpp
+        src/Platform/Platform_win32.cpp
 )
-find_package(Freetype REQUIRED)
-find_package(CURL REQUIRED)
-target_link_libraries(Browser PRIVATE Freetype::Freetype)
+target_link_libraries(Browser PRIVATE freetype CURL::libcurl)
 
 
 

@@ -22,6 +22,9 @@ public:
         int h,
         Color color
     );
+
+    void DrawLine(int x0, int y0, int x1, int y1, Color color);
+
     void FillRectWithBorder(
     int x,
     int y,
@@ -41,7 +44,14 @@ public:
     );
     int GetWidth() const;
     int GetHeight() const;
-
+    void DrawWavyLine(
+        int x0, int y0,
+        int x1, int y1,
+        float amplitude,
+        float frequency,
+        int thickness,
+        Color color
+    );
 private:
     int width;
     int height;
