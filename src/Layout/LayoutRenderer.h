@@ -59,12 +59,14 @@ public:
 // ---------------------------------------------------------------------------
 class LayoutRenderer {
 public:
+    FontMetrics PrepareFontContext(const Style &s, int forcedSize, Font *&outFont);
+
     explicit LayoutRenderer(Renderer& renderer);
 
     // Full layout + render pass driven by the DOM root.
     void Update(const Node& dom);
+    void Render(const LayoutBox &box);
     void Render();
-
     // Public so FormattingContext subclasses can reuse them.
     Font& ResolveFont(const Style& s);
 
@@ -88,12 +90,18 @@ private:
 
     // --- render helpers ---
     void RenderBox(const LayoutBox& box);
+
+    void RenderImage(const LayoutBox &box) const;
+
     void RenderTextRun(const LayoutBox& box);
     void RenderBlock(const LayoutBox& box);
-    void RenderLine(const LayoutBox& box);
-    void RenderDecoration(const LayoutBox& box,
-                          int startX, int endX,
-                          int baseline);
+
+    void RenderSingleBorderEdge(const Border_side &edge, int start, int end, int fixedCoord, bool isHorizontal);
+
+    void RenderLine(const LayoutBox &box, int Text_Height);
+    void RenderDecoration(
+        TextDecorationStyle style,
+        Color color, int startX, int y, int thickness, int endX);
 
     // Searches the layout tree for the first node with a background color and
     // uses it as the window clear color.

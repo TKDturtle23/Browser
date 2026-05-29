@@ -27,23 +27,52 @@ enum class EventType {
     MouseButtonPress,
     MouseButtonRelease
 };
+enum class Key {
+    Unknown = 0,
 
+    // Letters
+    A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q, R, S, T, U, V, W, X, Y, Z,
+
+    // Numbers
+    Num0, Num1, Num2, Num3, Num4, Num5, Num6, Num7, Num8, Num9,
+
+    // Function Keys
+    F1, F2, F3, F4, F5, F6, F7, F8, F9, F10, F11, F12,
+
+    // State / Control Keys
+    Escape, Space, Return, Backspace, Tab, CapsLock, ScrollLock, NumLock, PrintScreen, Pause,
+
+    // Navigation
+    Left, Right, Up, Down,
+    Insert, Delete, Home, End, PageUp, PageDown,
+
+    // Modifiers (Note: Win32 mapping notes below)
+    LShift, RShift, LCtrl, RCtrl, LAlt, RAlt, LSystem, RSystem, Menu,
+
+    // Numpad
+    Numpad0, Numpad1, Numpad2, Numpad3, Numpad4, Numpad5, Numpad6, Numpad7, Numpad8, Numpad9,
+    NumpadDivide, NumpadMultiply, NumpadSubtract, NumpadAdd, NumpadDecimal, NumpadEnter,
+
+    // Punctuation / Miscellaneous
+    Semicolon, Slash, Equal, Hyphen, LBracket, RBracket, Comma, Period, Quote, Backquote, Backslash
+};
 struct Event {
     EventType type = EventType::None;
 
-    int x = 0;
-    int y = 0;
+    int x = 0;              // Mouse X coordinate
+    int y = 0;              // Mouse Y coordinate
+    int button = 0;         // 1 = Left, 2 = Right, 3 = Middle
 
     int width = 0;
     int height = 0;
 
-    uint32_t key = 0;
-};
+    Key key = Key::Unknown;       // Virtual Key Code (e.g., VK_ESCAPE, VK_SPACE)
 
+};
 class Platform {
 public:
     virtual ~Platform() = default;
-
+    virtual void SetMinimumSize(int width, int height) = 0;
     virtual bool OpenWindow(
         int width,
         int height,
@@ -69,4 +98,7 @@ public:
     bool resizing = false;
     bool needsRedraw = false;
     std::function<void()> onRender;
+    int min_width = 0, min_height = 0;
+protected:
+
 };

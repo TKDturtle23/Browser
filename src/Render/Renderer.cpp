@@ -2,7 +2,8 @@
 #include "Renderer.h"
 #include <algorithm>
 #include <cmath>
-
+#include <iostream>
+#include <ostream>
 
 
 Renderer::Renderer(int width, int height)
@@ -61,6 +62,88 @@ void Renderer::DrawRect(
     // right
     for (int py = y; py < y + h; py++) {
         DrawPixel(x + w - 1, py, color);
+    }
+}
+void Renderer::FillRectBeveled(int x, int y, int w, int h, int bevelSize, Color color) {
+    // Clamp bevel size so it doesn't exceed half the dimensions
+    if (bevelSize > w / 2) bevelSize = w / 2;
+    if (bevelSize > h / 2) bevelSize = h / 2;
+    if (bevelSize < 0) bevelSize = 0;
+
+    for (int py = y; py < y + h; py++) {
+        // Calculate relative Y coordinates from top and bottom edges
+        int dy_top = py - y;
+        int dy_bottom = (y + h - 1) - py;
+
+        for (int px = x; px < x + w; px++) {
+            // Calculate relative X coordinates from left and right edges
+            int dx_left = px - x;
+            int dx_right = (x + w - 1) - px;
+
+            // Check top-left corner
+            if (dx_left < bevelSize && dy_top < bevelSize && (dx_left + dy_top) < bevelSize) {
+                continue;
+            }
+            // Check top-right corner
+            if (dx_right < bevelSize && dy_top < bevelSize && (dx_right + dy_top) < bevelSize) {
+                continue;
+            }
+            // Check bottom-left corner
+            if (dx_left < bevelSize && dy_bottom < bevelSize && (dx_left + dy_bottom) < bevelSize) {
+                continue;
+            }
+            // Check bottom-right corner
+            if (dx_right < bevelSize && dy_bottom < bevelSize && (dx_right + dy_bottom) < bevelSize) {
+                continue;
+            }
+
+            DrawPixel(px, py, color);
+        }
+    }
+}
+
+void Renderer::DrawRectBeveled(int x, int y, int w, int h, int bevelSize, Color color) {
+    // Clamp bevel size so it doesn't exceed half the dimensions
+    if (bevelSize > w / 2) bevelSize = w / 2;
+    if (bevelSize > h / 2) bevelSize = h / 2;
+    if (bevelSize < 0) bevelSize = 0;
+
+    // --- 1. Straight Edges ---
+
+    // Top edge (indented from left and right)
+    for (int px = x + bevelSize; px < x + w - bevelSize; px++) {
+        DrawPixel(px, y, color);
+    }
+
+    // Bottom edge (indented from left and right)
+    for (int px = x + bevelSize; px < x + w - bevelSize; px++) {
+        DrawPixel(px, y + h - 1, color);
+    }
+
+    // Left edge (indented from top and bottom)
+    for (int py = y + bevelSize; py < y + h - bevelSize; py++) {
+        DrawPixel(x, py, color);
+    }
+
+    // Right edge (indented from top and bottom)
+    for (int py = y + bevelSize; py < y + h - bevelSize; py++) {
+        DrawPixel(x + w - 1, py, color);
+    }
+
+    // --- 2. Beveled Diagonals ---
+
+    for (int i = 0; i < bevelSize; i++) {
+        // Top-Left corner
+        DrawPixel(x + i, y + bevelSize - 1 - i, color);
+
+        // Top-Right corner
+        DrawPixel(x + w - bevelSize + i, y + i, color);
+
+        // Bottom-Left corner
+        DrawPixel(x + i, y + h - bevelSize + i, color);
+
+        // Bottom-Right corner
+        DrawPixel(x + w - 1 - i, y + h - bevelSize + i, color);
     }
 }
 void Renderer::DrawLine(int x0, int y0, int x1, int y1, Color color) {
@@ -123,7 +206,7 @@ void Renderer::DrawWavyLine(
         float by = y0 + uy * i;
 
         // Sine wave offset
-        float offset = std::sin(t * frequency * 2.0f * 3.14159265f) * amplitude;
+        float offset = std::cos((t * frequency * 2.0f * 3.14159265f)  + 3.14159265) * amplitude;
 
         float wx = bx + px * offset;
         float wy = by + py * offset;
@@ -144,6 +227,19 @@ void Renderer::DrawWavyLine(
         }
     }
 }
+
+void Renderer::CopyFromBuffer(int x, int y, int w, int h, const std::vector<Color> &buffer) {
+    if (buffer.size() != w * h) {
+        std::cerr << "Buffer size mismatch" << std::endl;
+        return;
+    }
+    for (int py = 0; py < h; py++) {
+        for (int px = 0; px < w; px++) {
+            DrawPixel(x + px, y + py, buffer[py * w + px]);
+        }
+    }
+}
+
 void Renderer::FillRectWithBorder(
     int x,
     int y,
@@ -167,6 +263,30 @@ int Renderer::GetWidth() const {
 
 int Renderer::GetHeight() const {
     return height;
+}
+
+void Renderer::DrawCircle(int cx, int cy, int radius, Color color) {
+    // Look slightly outside the radius (+1) to capture the anti-aliasing falloff zone
+    for (int oy = -radius - 1; oy <= radius + 1; ++oy) {
+        for (int ox = -radius - 1; ox <= radius + 1; ++ox) {
+            float distance = std::sqrt(static_cast<float>(ox * ox + oy * oy));
+
+            // Inside the solid core
+            if (distance <= radius - 0.5f) {
+                DrawPixel(cx + ox, cy + oy, color);
+            }
+            // In the anti-aliasing edge zone (1-pixel transition band)
+            else if (distance < radius + 0.5f) {
+                float edgeAlpha = (radius + 0.5f) - distance; // Smooth dropoff from 1.0 to 0.0
+
+                Color blendedColor = color;
+                // Scale the color's native alpha channel by our edge falloff factor
+                blendedColor.a = static_cast<uint8_t>(color.a * edgeAlpha);
+
+                DrawPixel(cx + ox, cy + oy, blendedColor);
+            }
+        }
+    }
 }
 
 void Renderer::DrawGlyph(

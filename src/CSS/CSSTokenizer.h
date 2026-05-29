@@ -21,5 +21,5 @@ struct CSSToken {
 
 class CSSTokenizer {
 public:
-    std::vector<CSSToken> Tokenize(const std::string& css);
+    std::vector<CSSToken> Tokenize(const std::string &css, bool isInlineStyle);
 };

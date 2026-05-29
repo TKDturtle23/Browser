@@ -11,7 +11,7 @@
 
 class Platform_Win32 : public Platform{
 public:
-
+    Platform_Win32();
     ~Platform_Win32() override;
 
     bool OpenWindow(
@@ -34,6 +34,7 @@ public:
     int GetHeight() const override;
 
     bool IsRunning() const override;
+    void SetMinimumSize(int width, int height) override;
 
 public:
     bool pendingResize = false;

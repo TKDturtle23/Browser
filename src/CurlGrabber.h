@@ -4,18 +4,21 @@
 
 #ifndef BROWSER_CURLGRABBER_H
 #define BROWSER_CURLGRABBER_H
+#include <map>
 #include <string>
 
 
 struct Grab {
-    std::string data;
+    std::string body;
+    std::map<std::string, std::string> headers;
+    long status_code;
 };
 class CurlGrabber {
     public:
     CurlGrabber() = default;
 
-    void Init();
-    Grab GetData(std::string link);
+    static void Init();
+    Grab GetData(std::string link, const std::map<std::string, std::string> &extraHeaders);
 private:
 
 };

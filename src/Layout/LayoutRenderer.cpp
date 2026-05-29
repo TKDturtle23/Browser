@@ -17,6 +17,41 @@ static bool IsBlank(const std::string& s) {
     return std::all_of(s.begin(), s.end(),
         [](char c) { return std::isspace(static_cast<unsigned char>(c)); });
 }
+static int ResolveLength(const CSSLength& len, int referenceContextSize) {
+    switch (len.unit) {
+        case LengthUnit::Percent:
+            return static_cast<int>((len.value / 100.0f) * referenceContextSize);
+        case LengthUnit::Px:
+            return static_cast<int>(len.value);
+        case LengthUnit::Auto:
+        case LengthUnit::Em:
+        default:
+            return 0; // Handled structurally or defaulted safely
+    }
+}
+FontMetrics LayoutRenderer::PrepareFontContext(const Style& s, int forcedSize, Font*& outFont) {
+    outFont = &ResolveFont(s);
+
+    int targetSize = 16; // The browser standard default fallback
+
+    if (forcedSize > 0) {
+        targetSize = forcedSize;
+    } else if (s.font_size.unit != LengthUnit::Auto) {
+        // Resolve length relative to a standard 16px parent text context baseline.
+        // If it's an 'em' or '%', it scales beautifully (e.g., 1.5em or 150% = 24px)
+        if (s.font_size.unit == LengthUnit::Em) {
+            targetSize = static_cast<int>(s.font_size.value * 16.0f);
+        } else {
+            targetSize = ResolveLength(s.font_size, 16);
+        }
+    }
+
+    // Fallback sanity guard to make sure font sizes never collapse completely or invert
+    if (targetSize <= 0) targetSize = 16;
+
+    outFont->SetSize(targetSize);
+    return outFont->GetMetrics();
+}
 
 static bool IsNonRendered(const std::string& tag) {
     static const std::unordered_set<std::string> kTags = {
@@ -25,16 +60,38 @@ static bool IsNonRendered(const std::string& tag) {
     return kTags.contains(tag);
 }
 
-static bool IsInlineTag(const std::string& tag) {
-    static const std::unordered_set<std::string> kTags = {
-        "span", "a", "b", "i", "em", "strong", "small", "code",
-        "u", "s", "label", "mark", "sub", "sup", "font", "tt"
-    };
-    return kTags.contains(tag);
+static bool IsLayoutIgnored(const Node& n) {
+    if (n.type == NodeType::Doctype || n.type == NodeType::Document) return true;
+    if (n.type == NodeType::Element && IsNonRendered(n.tag)) return true;
+    return false;
 }
 
-// A node participates in inline flow if it is a text node or a known inline
-// element.  Unknown tags default to block so we don't accidentally inline them.
+
+
+int GetVisibleBorderWidth(const Border_side& side) {
+    // If the unit is Auto or less than zero, treat it as invisible/0px width
+    if (side.borderWidth.unit == LengthUnit::Auto || side.borderWidth.value < 0.0f) {
+        return 0;
+    }
+
+    // Resolve the internal value assuming standard 16px parent context conversion
+    return ResolveLength(side.borderWidth, 16);
+}
+
+bool IsInlineTag(const std::string& tag) {
+    std::string lowerTag = tag;
+    std::transform(lowerTag.begin(), lowerTag.end(), lowerTag.begin(), ::tolower);
+
+    return (lowerTag == "span" ||
+            lowerTag == "a" ||
+            lowerTag == "em" ||
+            lowerTag == "strong" ||
+            lowerTag == "code" ||
+            lowerTag == "i" ||
+            lowerTag == "b" ||
+            lowerTag == "img" ||  // FIX: Allow images to sit inline natively
+            lowerTag == "#text");
+}
 static bool IsInlineChild(const Node& n) {
     if (n.type == NodeType::Text)    return true;
     if (n.type != NodeType::Element) return false;
@@ -42,22 +99,21 @@ static bool IsInlineChild(const Node& n) {
     return IsInlineTag(n.tag);
 }
 
-
 // ===========================================================================
 //  Word — the atomic unit of inline layout
 // ===========================================================================
 
 struct Word {
-    const Node* node  = nullptr;   // text node that owns this word
+    const Node* node  = nullptr;
     std::string text;
     int         width = 0;
+    int         height = 0;   // NEW: Track height for atomic replaced boxes
     int         fontSize = 0;
     bool        hasSpaceBefore = false;
     bool        bold   = false;
     bool        italic = false;
+    bool        isImage = false; // NEW: Distinguish images from raw strings
 };
-
-
 // ===========================================================================
 //  WordCollector — walks an inline subtree and emits Words
 // ===========================================================================
@@ -73,22 +129,59 @@ public:
     {}
 
     void Visit(const Node& node) {
-        if (node.type == NodeType::Element && IsNonRendered(node.tag))
+        if (IsLayoutIgnored(node))
             return;
 
         if (node.type == NodeType::Text) {
             VisitText(node);
             return;
         }
-
         if (node.type == NodeType::Element) {
+            if (node.tag == "img") {
+                Word w;
+                w.node = &node;
+                w.isImage = true;
+                w.hasSpaceBefore = pendingSpace_;
+
+                // Establish dimensions fallback sequence (CSS -> Attributes -> Decoder Intrinsic -> Default)
+                int imgW = 32;
+                int imgH = 32;
+
+                if (node.attributes.contains("width"))  imgW = std::stoi(node.attributes.at("width"));
+                if (node.attributes.contains("height")) imgH = std::stoi(node.attributes.at("height"));
+
+                if (node.computedStyle.width.unit == LengthUnit::Px)  imgW = static_cast<int>(node.computedStyle.width.value);
+                if (node.computedStyle.height.unit == LengthUnit::Px) imgH = static_cast<int>(node.computedStyle.height.value);
+
+                // If fully loaded by your custom decoder, grab physical metrics if unstated
+                if (node.imageData && node.imageData->isLoaded) {
+                    if (!node.attributes.contains("width")  && node.computedStyle.width.unit == LengthUnit::Auto)  imgW = node.imageData->intrinsicWidth;
+                    if (!node.attributes.contains("height") && node.computedStyle.height.unit == LengthUnit::Auto) imgH = node.imageData->intrinsicHeight;
+                }
+
+                w.width = imgW;
+                w.height = imgH;
+
+                out_.push_back(std::move(w));
+                pendingSpace_ = false;
+                return;
+            }
+
+
             Font& font = resolveFont_(node.computedStyle);
-            font.SetSize(node.computedStyle.font_size > 0
-                ? node.computedStyle.font_size : 16);
+
+            // Look up the font size using the exact same rule:
+            int targetSize = 16;
+            if (node.computedStyle.font_size.unit == LengthUnit::Em) {
+                targetSize = static_cast<int>(node.computedStyle.font_size.value * 16.0f);
+            } else if (node.computedStyle.font_size.unit != LengthUnit::Auto) {
+                targetSize = ResolveLength(node.computedStyle.font_size, 16);
+            }
+            if (targetSize <= 0) targetSize = 16;
+
+            font.SetSize(targetSize);
 
             for (const auto& child : node.children) {
-                // Block children inside an inline context are skipped here;
-                // they will be handled by the block formatter.
                 if (child->type == NodeType::Element
                     && child->computedStyle.display == DisplayType::Block)
                     continue;
@@ -99,17 +192,22 @@ public:
 
 private:
     void VisitText(const Node& node) {
-        assert(node.parent);
-        const Style& parentStyle = node.parent->computedStyle;
+        const Node* operationalParent = node.parent;
+        const Style& parentStyle = operationalParent ? operationalParent->computedStyle : node.computedStyle;
         Font& font = resolveFont_(parentStyle);
 
-        int size = parentStyle.font_size > 0 ? parentStyle.font_size : 16;
+        int size = 16;
+        if (parentStyle.font_size.unit == LengthUnit::Em) {
+            size = static_cast<int>(parentStyle.font_size.value * 16.0f);
+        } else if (parentStyle.font_size.unit != LengthUnit::Auto && parentStyle.font_size.value > 0.0f) {
+            size = ResolveLength(parentStyle.font_size, 16);
+        }
         font.SetSize(size);
 
         const std::string& t = node.text;
+
         size_t i = 0;
         while (i < t.size()) {
-            // Consume leading whitespace; remember we saw it.
             if (std::isspace(static_cast<unsigned char>(t[i]))) {
                 pendingSpace_ = true;
                 while (i < t.size() && std::isspace(static_cast<unsigned char>(t[i])))
@@ -117,7 +215,6 @@ private:
                 continue;
             }
 
-            // Consume a non-whitespace run.
             size_t start = i;
             while (i < t.size() && !std::isspace(static_cast<unsigned char>(t[i])))
                 ++i;
@@ -137,13 +234,30 @@ private:
     }
 
     static int MeasureText(Font& font, const std::string& s) {
+        if (s.empty()) return 0;
+
         int w = 0;
         char prev = 0;
-        for (char c : s) {
+
+        for (size_t i = 0; i < s.size() - 1; ++i) {
+            char c = s[i];
             if (prev) w += font.GetKerning(c, prev).x >> 6;
             w += font.GetGlyph(c).advance;
             prev = c;
         }
+
+        char lastChar = s.back();
+        if (prev) w += font.GetKerning(lastChar, prev).x >> 6;
+
+        const auto& g = font.GetGlyph(lastChar);
+        int lastGlyphVisualWidth = g.bearingX + g.width;
+
+        if (lastGlyphVisualWidth > g.advance) {
+            w += lastGlyphVisualWidth;
+        } else {
+            w += g.advance;
+        }
+
         return w;
     }
 
@@ -156,7 +270,6 @@ private:
     bool pendingSpace_ = false;
 };
 
-
 // ===========================================================================
 //  InlineFormattingContext — normal inline / block-in-inline layout
 // ===========================================================================
@@ -166,14 +279,10 @@ public:
     InlineFormattingContext(LayoutRenderer& lr, TextAlign align)
         : lr_(lr), align_(align) {}
 
-    // Lays out `inlineRoots` into lines starting at (startX, startY) within
-    // `containerWidth`.  Appends line boxes to `parent`.
-    // Returns the Y coordinate just below the last line.
     int LayoutRoots(const std::vector<const Node*>& inlineRoots,
                     LayoutBox& parent,
                     int startX, int startY, int containerWidth)
     {
-        // --- 1. Collect words ------------------------------------------------
         std::vector<Word> words;
         WordCollector wc(
             lr_.BaseFont, lr_.BaseItalicFont,
@@ -184,7 +293,6 @@ public:
         for (const Node* n : inlineRoots)
             wc.Visit(*n);
 
-        // --- 2. Line-break words into lines ----------------------------------
         Font& baseFont   = lr_.BaseFont;
         FontMetrics base = baseFont.GetMetrics();
         int spaceWidth   = baseFont.GetGlyph(' ').advance;
@@ -196,52 +304,120 @@ public:
             line.x     = startX;
             line.y     = y;
             line.width = containerWidth;
-            line.height = base.lineHeight; // refined below
+            line.height = base.lineHeight;
             return line;
         };
+std::vector<LayoutBox> lines;
+    LayoutBox currentLine = MakeLine(startY);
+    int cursorX = startX;
 
-        std::vector<LayoutBox> lines;
-        LayoutBox currentLine = MakeLine(startY);
-        int cursorX = startX;
+    for (size_t wordIdx = 0; wordIdx < words.size(); ++wordIdx) {
+        const Word& w = words[wordIdx];
+        const Style& s = w.node->parent ? w.node->parent->computedStyle : w.node->computedStyle;
 
-        for (const Word& w : words) {
-            bool lineHasContent = !currentLine.children.empty();
-            int  gap = (lineHasContent && w.hasSpaceBefore) ? spaceWidth : 0;
+        bool isNoWrap   = (s.whiteSpace == WhiteSpace::nowrap);
+        bool doEllipsis = (s.textOverflow == TextOverflow::Ellipsis);
 
-            if (lineHasContent && cursorX + gap + w.width > rightEdge) {
-                FinalizeLineMetrics(currentLine);
-                lines.push_back(std::move(currentLine));
-                currentLine = MakeLine(lines.back().y + lines.back().height);
-                cursorX = startX;
-                gap     = 0;
-            }
+        // Inside the words vector parsing loop:
+        bool lineHasContent = !currentLine.children.empty();
+        int gap = (lineHasContent && w.hasSpaceBefore) ? spaceWidth : 0;
 
-            cursorX += gap;
-
-            Font&       font = lr_.ResolveFont(w.node->parent->computedStyle);
-            font.SetSize(w.fontSize);
-            FontMetrics wm   = font.GetMetrics();
-
-            LayoutBox run;
-            run.kind     = BoxKind::TextRun;
-            run.x        = cursorX;
-            run.y        = currentLine.y;
-            run.width    = w.width;
-            run.height   = wm.lineHeight;
-            run.fontSize = w.fontSize;
-            run.node     = w.node;
-            run.text     = w.text;
-
-            currentLine.children.push_back(std::move(run));
-            cursorX += w.width;
+        // 1. Line Break wrapping constraints check
+        if (!isNoWrap && lineHasContent && cursorX + gap + w.width > rightEdge) {
+            FinalizeLineMetrics(currentLine, lr_);
+            lines.push_back(std::move(currentLine));
+            currentLine = MakeLine(lines.back().y + lines.back().height);
+            cursorX = startX;
+            gap     = 0;
         }
 
+        // --- NEW: Handle Replaced Image element layout packing ---
+        if (w.isImage) {
+            LayoutBox run;
+            run.kind   = BoxKind::TextRun; // Fits your existing enum; handled contextually by tag
+            run.x      = cursorX + gap;
+            run.y      = currentLine.y; // Placeholder default
+            run.width  = w.width;
+            run.height = w.height; // Sets custom bounds! pushes maxH up automatically in FinalizeLineMetrics
+            run.node   = w.node;
+            run.text   = "";
+
+            currentLine.children.push_back(std::move(run));
+            cursorX += gap + w.width;
+            continue;
+        }
+
+        // 2. Handle Text Overflow / Truncation (When nowrap is active and we hit the wall)
+        if (isNoWrap && cursorX + gap + w.width > rightEdge) {
+            if (doEllipsis) {
+                // We need to fit what we can of this word, plus the "..."
+                Font* font = nullptr;
+                lr_.PrepareFontContext(s, w.fontSize, font);
+                int ellipsisWidth = font->GetGlyph('.').advance * 3;
+
+                std::string truncatedText = w.text;
+                int availableWidth = rightEdge - (cursorX + gap) - ellipsisWidth;
+
+                // Remeasure character by character backwards until it fits
+                while (!truncatedText.empty() && availableWidth > 0) {
+                    int currentW = 0;
+                    // Custom simplified character measurement loop
+                    for (char c : truncatedText) {
+                        currentW += font->GetGlyph(c).advance;
+                    }
+                    if (currentW <= availableWidth) {
+                        break;
+                    }
+                    truncatedText.pop_back();
+                }
+
+                truncatedText += "...";
+                int finalWidth = 0;
+                for (char c : truncatedText) finalWidth += font->GetGlyph(c).advance;
+
+                // Emit the truncated TextRun
+                LayoutBox run;
+                run.kind     = BoxKind::TextRun;
+                run.x        = cursorX + gap;
+                run.y        = currentLine.y;
+                run.width    = finalWidth;
+                run.height   = base.lineHeight;
+                run.fontSize = w.fontSize;
+                run.node     = w.node;
+                run.text     = truncatedText;
+
+                currentLine.children.push_back(std::move(run));
+            }
+
+            // Break early! We hit the max-width barrier on a nowrap container.
+            break;
+        }
+
+        // 3. Normal positioning path (Everything fits safely)
+        cursorX += gap;
+
+        Font* font = nullptr;
+        FontMetrics wm = lr_.PrepareFontContext(s, w.fontSize, font);
+
+        LayoutBox run;
+        run.kind     = BoxKind::TextRun;
+        run.x        = cursorX;
+        run.y        = currentLine.y;
+        run.width    = w.width;
+        run.height   = wm.lineHeight;
+        run.fontSize = w.fontSize;
+        run.node     = w.node;
+        run.text     = w.text;
+
+        currentLine.children.push_back(std::move(run));
+        cursorX += w.width;
+    }
+
         if (!currentLine.children.empty()) {
-            FinalizeLineMetrics(currentLine);
+            FinalizeLineMetrics(currentLine, lr_);
             lines.push_back(std::move(currentLine));
         }
 
-        // --- 3. Apply text-align ---------------------------------------------
         if (align_ != TextAlign::Left) {
             for (auto& line : lines) {
                 int contentRight = line.children.back().x + line.children.back().width;
@@ -254,7 +430,6 @@ public:
             }
         }
 
-        // --- 4. Move lines into parent ----------------------------------------
         int nextY = startY;
         for (auto& line : lines) {
             nextY = line.y + line.height;
@@ -263,91 +438,211 @@ public:
         return nextY;
     }
 
-    // FormattingContext interface (not used directly for inline — call
-    // LayoutRoots instead; this satisfies the vtable).
     int Layout(const Node&, LayoutBox&, int, int contentY, int) override {
         return contentY;
     }
 
 private:
-    static void FinalizeLineMetrics(LayoutBox& line) {
-        int ascent = 0, descent = 0, maxH = 0;
+    static void FinalizeLineMetrics(LayoutBox& line, LayoutRenderer& lr) {
+        int maxAscent = 0;
+        int maxDescent = 0;
+        int maxH = 0;
+
+        // --- Pass 1: Gather overall line metrics from all children ---
         for (const auto& run : line.children) {
-            maxH   = std::max(maxH, run.height);
-            // ascent/descent are stored per-run if we want per-glyph baseline
-            // alignment; for now approximate from height
+            maxH = std::max(maxH, run.height);
+
+            if (run.node) {
+                if (run.node->tag == "img") {
+                    // An inline image sitting on the baseline acts entirely as an "ascent"
+                    // block for the line box metrics.
+                    maxAscent = std::max(maxAscent, run.height);
+                } else {
+                    const Style& style = (run.node->type == NodeType::Text && run.node->parent)
+                                         ? run.node->parent->computedStyle
+                                         : run.node->computedStyle;
+
+                    Font* font = nullptr;
+                    FontMetrics wm = lr.PrepareFontContext(style, run.fontSize, font);
+
+                    maxAscent  = std::max(maxAscent, wm.ascent);
+                    maxDescent = std::max(maxDescent, wm.descent);
+                }
+            }
         }
-        if (maxH > 0) line.height = maxH;
-        // lineAscent / lineDescent populated below if available
+
+        // Adjust maxH if the combined text ascent/descent exceeds the tallest single item
+        maxH = std::max(maxH, maxAscent + maxDescent);
+
+        // Fallback to standard font size metrics if the line is completely empty
+        if (maxH == 0) {
+            maxH = lr.BaseFont.GetMetrics().lineHeight;
+            maxAscent = lr.BaseFont.GetMetrics().ascent;
+            maxDescent = lr.BaseFont.GetMetrics().descent;
+        }
+
+        line.height = maxH;
+        line.lineAscent  = maxAscent;
+        line.lineDescent = maxDescent;
+
+        // --- Pass 2: Position elements vertically based on their parsed enum ---
+        for (auto& run : line.children) {
+            if (!run.node) continue;
+
+            const Style& style = (run.node->type == NodeType::Text && run.node->parent)
+                                 ? run.node->parent->computedStyle
+                                 : run.node->computedStyle;
+
+            // Resolve local font metrics for text offset calculations
+            Font* font = nullptr;
+            FontMetrics wm = lr.PrepareFontContext(style, run.fontSize, font);
+
+            switch (style.verticalAlign) {
+                case VerticalAlign::Top:
+                    // Align top of element box with top of the entire line box
+                    run.y = line.y;
+                    break;
+
+                case VerticalAlign::Bottom:
+                    // Align bottom of element box with bottom of the entire line box
+                    run.y = line.y + line.height - run.height;
+                    break;
+
+                case VerticalAlign::Middle: {
+                    // Align vertical midpoint of the element box with line baseline + half x-height
+                    // A reliable layout proxy for x-height is roughly half the structural ascent
+                    int lineXHeight = maxAscent / 2;
+                    int lineMidpointY = line.y + maxAscent - lineXHeight;
+                    run.y = lineMidpointY - (run.height / 2);
+                    break;
+                }
+
+                case VerticalAlign::Other: {
+                    // Custom length/percentage offset shifts relative to the text baseline
+                    // Negative goes down, positive goes up
+                    int baselineY = line.y + maxAscent;
+                    int customOffset = ResolveLength(style.verticalAlignValue, wm.lineHeight);
+
+                    if (run.node->tag == "img") {
+                        run.y = baselineY - run.height - customOffset;
+                    } else {
+                        run.y = baselineY - wm.ascent - customOffset;
+                    }
+                    break;
+                }
+                case VerticalAlign::TextTop:
+                case VerticalAlign::TextBottom:
+                case VerticalAlign::Super:
+                case VerticalAlign::Sub: {
+                    std::cerr << "VerticalAlign mode not implemented!" << std::endl;
+                    break;
+                }
+
+                case VerticalAlign::Baseline:
+                default: {
+                    // Standard default baseline alignment path
+                    int baselineY = line.y + maxAscent;
+                    if (run.node->tag == "img") {
+                        // Replaced element boxes sit directly on top of the text baseline
+                        run.y = baselineY - run.height;
+                    } else {
+                        // Align the actual font structural baseline
+                        run.y = baselineY - wm.ascent;
+                    }
+                    break;
+                }
+            }
     }
+}
 
     LayoutRenderer& lr_;
     TextAlign       align_;
 };
 
-
 // ===========================================================================
-//  BlockFormattingContext — normal block layout (current behaviour)
+//  BlockFormattingContext — normal block layout
 // ===========================================================================
 
 class BlockFormattingContext : public FormattingContext {
 public:
     explicit BlockFormattingContext(LayoutRenderer& lr) : lr_(lr) {}
 
-    int Layout(const Node& node,
-               LayoutBox& parent,
-               int contentX, int contentY, int contentWidth) override
-    {
+    int Layout(const Node& node, LayoutBox& parent, int contentX, int contentY, int contentWidth) override {
         int cursorY = contentY;
         const auto& kids = node.children;
         size_t i = 0;
+        int prevMarginBottom = 0;
+
+        bool hasBlockChildren = false;
+        for (const auto& child : kids) {
+            if (!child) continue; // FIX: Skip empty unique_ptrs safely
+            if (!IsLayoutIgnored(*child) && !IsInlineChild(*child)) {
+                hasBlockChildren = true;
+                break;
+            }
+        }
 
         while (i < kids.size()) {
             const Node& child = *kids[i];
-
-            if (ShouldSkip(child)) { ++i; continue; }
+            if (IsLayoutIgnored(child)) { ++i; continue; }
 
             if (IsInlineChild(child)) {
-                i = LayoutInlineRun(kids, i, parent,
-                                    contentX, cursorY, contentWidth,
-                                    node.computedStyle.textAlign,
-                                    cursorY);
+                cursorY += prevMarginBottom;
+                prevMarginBottom = 0;
+
+                if (hasBlockChildren) {
+                    LayoutBox anonBox;
+                    anonBox.kind = BoxKind::Block;
+                    anonBox.node = nullptr;
+                    anonBox.x = contentX;
+                    anonBox.y = cursorY;
+                    anonBox.width = 0;
+
+                    i = LayoutInlineRun(kids, i, anonBox, contentX, cursorY, contentWidth, node.computedStyle.textAlign, cursorY);
+
+                    int maxLineRightEdge = contentX;
+                    for (const auto& lineBox : anonBox.children) {
+                        maxLineRightEdge = std::max(maxLineRightEdge, lineBox.x + lineBox.width);
+                    }
+                    anonBox.width = maxLineRightEdge - contentX;
+                    anonBox.height = cursorY - anonBox.y;
+
+                    parent.children.push_back(std::move(anonBox));
+                } else {
+                    i = LayoutInlineRun(kids, i, parent, contentX, cursorY, contentWidth, node.computedStyle.textAlign, cursorY);
+                }
             } else {
+                const auto& s = child.computedStyle;
+                int marginTop = ResolveLength(s.margin_top, contentWidth);
+
+                int collapsedMargin = std::max(prevMarginBottom, marginTop);
+                cursorY += collapsedMargin;
+
                 LayoutBox cb = lr_.LayoutBlock(child, contentX, cursorY, contentWidth);
-                cursorY = cb.y + cb.height + child.computedStyle.margin_bottom;
+
+                cursorY = cb.y + cb.height;
+                prevMarginBottom = ResolveLength(s.margin_bottom, contentWidth);
+
                 parent.children.push_back(std::move(cb));
                 ++i;
             }
         }
+
+        cursorY += prevMarginBottom;
         return cursorY;
     }
 
 private:
-    // Returns true for nodes that produce no layout output.
-    static bool ShouldSkip(const Node& n) {
-        return n.type == NodeType::Doctype
-            || n.type == NodeType::Document
-            || (n.type == NodeType::Element && IsNonRendered(n.tag));
-    }
-
-    // Collects a contiguous run of inline children starting at `start`,
-    // lays them out, and returns the index of the first non-inline child.
-    size_t LayoutInlineRun(
-        const std::vector<std::unique_ptr<Node>>& kids,
-        size_t start,
-        LayoutBox& parent,
-        int contentX, int contentY, int contentWidth,
-        TextAlign align,
-        int& cursorY)
-    {
+    size_t LayoutInlineRun(const std::vector<std::unique_ptr<Node>>& kids, size_t start, LayoutBox& parent,
+                            int contentX, int contentY, int contentWidth, TextAlign align, int& cursorY) {
         std::vector<const Node*> run;
         size_t j = start;
 
         while (j < kids.size()) {
             const Node& c = *kids[j];
-            if (ShouldSkip(c))      { ++j; continue; }
-            if (!IsInlineChild(c))  break;
-            if (c.type == NodeType::Text && IsBlank(c.text)) { ++j; continue; }
+            if (IsLayoutIgnored(c)) { ++j; continue; }
+            if (!IsInlineChild(c)) break;
+
             run.push_back(&c);
             ++j;
         }
@@ -361,7 +656,6 @@ private:
 
     LayoutRenderer& lr_;
 };
-
 
 // ===========================================================================
 //  LayoutRenderer — public interface
@@ -386,103 +680,137 @@ Font& LayoutRenderer::ResolveFont(const Style& s) {
 //  Layout entry point
 // ---------------------------------------------------------------------------
 
-LayoutBox LayoutRenderer::LayoutBlock(const Node& node,
-                                      int containerX,
-                                      int containerY,
-                                      int containerWidth)
-{
+LayoutBox LayoutRenderer::LayoutBlock(const Node& node, int containerX, int containerY, int containerWidth) {
     const Style& s = node.computedStyle;
 
     LayoutBox box;
     box.kind = BoxKind::Block;
     box.node = &node;
 
-    // --- 1. Compute Horizontal Frame Padding/Borders -----------------------
-    int paddingX = s.padding_left + s.padding_right;
-    int borderX  = s.border.left + s.border.right;
+    // --- 1. Compute Horizontal Frame Padding/Borders ---
+    int paddingLeft   = ResolveLength(s.padding_left, containerWidth);
+    int paddingRight  = ResolveLength(s.padding_right, containerWidth);
+    int paddingX      = paddingLeft + paddingRight;
 
-    // --- 2. Resolve Outer Box Width -----------------------------------------
-    if (s.width >= 0) {
+    int borderLeftWidth   = GetVisibleBorderWidth(s.BorderLeft);
+    int borderRightWidth  = GetVisibleBorderWidth(s.BorderRight);
+    int borderTopWidth    = GetVisibleBorderWidth(s.BorderTop);
+    int borderBottomWidth = GetVisibleBorderWidth(s.BorderBottom);
+    int borderX           = borderLeftWidth + borderRightWidth;
+
+    // Change this flag: body shouldn't wrap-shrink by default!
+    bool shrinkToFit = (node.tag == "span" || node.tag == "button");
+
+    // --- 2. Resolve Outer Box Width ---
+    bool hasExplicitWidth = (s.width.unit != LengthUnit::Auto);
+    if (hasExplicitWidth) {
+        int computedContentWidth = ResolveLength(s.width, containerWidth);
         if (s.boxSizing == BoxSizing::ContentBox) {
-            // Content-box: specified width is just the inside; expand outward
-            box.width = s.width + paddingX + borderX;
+            box.width = computedContentWidth + paddingX + borderX;
         } else {
-            // Border-box: specified width is the final outer width
-            box.width = s.width;
+            // BoxSizing::BorderBox: The specified width is the total outer box width
+            box.width = computedContentWidth;
         }
     } else {
-        // width: auto takes up all available space minus margins
-        box.width = containerWidth - s.margin_left - s.margin_right;
+        // Standard block tags occupy full parent context horizontal spans
+        box.width = containerWidth;
     }
 
-    // --- 3. Apply Horizontal Constraints ------------------------------------
-    if (s.max_width >= 0) box.width = std::min(box.width, s.max_width);
-    if (s.min_width >= 0) box.width = std::max(box.width, s.min_width);
+    // --- 3. Apply Horizontal Constraints (Keep existing max/min logic...)
 
-    // --- 4. Position the Box Horizontally -----------------------------------
-    if (s.margin_left_auto && s.margin_right_auto) {
-        box.x = containerX + (containerWidth - box.width) / 2;
-    } else {
-        box.x = containerX + s.margin_left;
+    // --- 4. Position the Box Horizontally (Resolving Auto Margins) ---
+
+    int marginLeft   = (s.margin_left.unit   == LengthUnit::Auto) ? 0 : ResolveLength(s.margin_left, containerWidth);
+    int marginRight  = (s.margin_right.unit  == LengthUnit::Auto) ? 0 : ResolveLength(s.margin_right, containerWidth);
+
+    // Vertical auto margins ALWAYS resolve to 0 in standard flow
+    int marginTop    = (s.margin_top.unit    == LengthUnit::Auto) ? 0 : ResolveLength(s.margin_top, containerWidth);
+    int marginBottom = (s.margin_bottom.unit == LengthUnit::Auto) ? 0 : ResolveLength(s.margin_bottom, containerWidth);
+
+    int remainingSpace = containerWidth - box.width;
+    if (remainingSpace > 0) {
+        if (s.margin_left.unit == LengthUnit::Auto && s.margin_right.unit == LengthUnit::Auto) {
+            marginLeft  = remainingSpace / 2;
+            marginRight = remainingSpace - marginLeft;
+        } else if (s.margin_left.unit == LengthUnit::Auto) {
+            marginLeft  = remainingSpace - marginRight;
+        } else if (s.margin_right.unit == LengthUnit::Auto) {
+            marginRight = remainingSpace - marginLeft;
+        }
     }
-    box.y = containerY + s.margin_top;
 
-    // --- 5. Determine Inner Content Context ---------------------------------
-    int contentX     = box.x + s.border.left + s.padding_left;
-    int contentY     = box.y + s.border.top  + s.padding_top;
+    box.x = containerX + marginLeft;
+    // We will let the BlockFormattingContext calculate the exact box.y
+    // to account for collapsing adjacent margins!
+    box.y = containerY;
+
+    // --- 5. Determine Inner Content Context ---
+    int contentX     = box.x + borderLeftWidth + paddingLeft;
+    int contentY     = box.y + borderTopWidth  + ResolveLength(s.padding_top, containerWidth);
     int contentWidth = std::max(0, box.width - paddingX - borderX);
 
-    // --- 6. Choose Formatting Context & Layout Children ---------------------
-    std::unique_ptr<FormattingContext> ctx;
-    switch (s.display) {
-        default: ctx = std::make_unique<BlockFormattingContext>(*this); break;
-    }
-
+    // --- 6. Choose Formatting Context & Layout Children ---
+    std::unique_ptr<FormattingContext> ctx = std::make_unique<BlockFormattingContext>(*this);
     int endY = ctx->Layout(node, box, contentX, contentY, contentWidth);
 
-    // --- 7. Resolve Outer Box Height ----------------------------------------
-    int paddingY = s.padding_top + s.padding_bottom;
-    int borderY  = s.border.top + s.border.bottom;
+    // --- 7. Recalculate Width ONLY if width is 'auto' AND shrinkToFit is true ---
+    if (!hasExplicitWidth && shrinkToFit && !box.children.empty()) {
+        int maxChildRightEdge = contentX;
+        for (const auto& childBox : box.children) {
+            maxChildRightEdge = std::max(maxChildRightEdge, childBox.x + childBox.width);
+        }
+        int calculatedContentWidth = maxChildRightEdge - contentX;
+        box.width = calculatedContentWidth + paddingX + borderX;
 
-    if (s.height >= 0) {
+        int finalSpace = containerWidth - box.width;
+        if (finalSpace > 0 && s.margin_left.unit == LengthUnit::Auto && s.margin_right.unit == LengthUnit::Auto) {
+            box.x = containerX + finalSpace / 2;
+        }
+    }
+
+    // --- 8. Resolve Outer Box Height ---
+    int paddingTop    = ResolveLength(s.padding_top, containerWidth);
+    int paddingBottom = ResolveLength(s.padding_bottom, containerWidth);
+    int paddingY      = paddingTop + paddingBottom;
+    int borderY        = borderTopWidth + borderBottomWidth;
+
+    if (s.height.unit != LengthUnit::Auto) {
+        int computedContentHeight = ResolveLength(s.height, 0);
         if (s.boxSizing == BoxSizing::ContentBox) {
-            box.height = s.height + paddingY + borderY;
+            box.height = computedContentHeight + paddingY + borderY;
         } else {
-            box.height = s.height;
+            // BoxSizing::BorderBox: The specified height is the total outer box height
+            box.height = computedContentHeight;
         }
     } else {
-        // height: auto is determined by the bottom of the children content
         box.height = (endY - contentY) + paddingY + borderY;
     }
 
-    // --- 8. Apply Vertical Constraints --------------------------------------
-    if (s.max_height >= 0) box.height = std::min(box.height, s.max_height);
-    if (s.min_height >= 0) box.height = std::max(box.height, s.min_height);
+    if (s.max_height.unit != LengthUnit::Auto) box.height = std::min(box.height, ResolveLength(s.max_height, 0));
+    if (s.min_height.unit != LengthUnit::Auto) box.height = std::max(box.height, ResolveLength(s.min_height, 0));
 
     return box;
 }
-
 // ---------------------------------------------------------------------------
 //  DOM → layout root
 // ---------------------------------------------------------------------------
 
 void LayoutRenderer::Update(const Node& dom) {
-    // Find <body> anywhere in the tree.
     const Node* body = nullptr;
     std::function<const Node*(const Node&)> findBody = [&](const Node& n) -> const Node* {
         for (const auto& child : n.children) {
-            if (child->tag == "body")        return child.get();
-            if (auto* r = findBody(*child))  return r;
+            if (child->tag == "body") return child.get();
+            if (!IsLayoutIgnored(*child)) {
+                if (auto* r = findBody(*child)) return r;
+            }
         }
         return nullptr;
     };
     body = findBody(dom);
     assert(body && "DOM must contain a <body> element");
 
-    root = LayoutBlock(*body, 0, 0, renderer.GetWidth());
-
-    // Ensure the root fills the viewport so the background covers the window.
-    root.height = std::max(root.height, renderer.GetHeight());
+    int bodyMarginTop = ResolveLength(body->computedStyle.margin_top, renderer.GetWidth());
+    root = LayoutBlock(*body, 0, bodyMarginTop, renderer.GetWidth());
 }
 
 // ===========================================================================
@@ -495,47 +823,126 @@ Color LayoutRenderer::FindWindowBackground() const {
             return b.node->computedStyle.backgroundColor;
         for (const auto& c : b.children) {
             Color r = find(c);
-            if (r.a != 0) return r; // found something
+            if (r.a != 0) return r;
         }
-        return Color(0, 0, 0, 0); // sentinel: nothing found
+        return Color(0, 0, 0, 0);
     };
     Color bg = find(root);
     return bg.a != 0 ? bg : Color(255, 255, 255);
 }
 
+void LayoutRenderer::Render(const LayoutBox& box) {
+    if (box.kind == BoxKind::Block) {
+        RenderBlock(box);
+    } else if (box.kind == BoxKind::Line) {
+        // Line box itself doesn't hold text size. Find the maximum text size within its text run children!
+        int activeLineFontSize = 16;
+        for (const auto& run : box.children) {
+            if (run.fontSize > 0) {
+                activeLineFontSize = run.fontSize;
+                break;
+            }
+        }
+        RenderLine(box, activeLineFontSize);
+    }
+
+    if (box.kind == BoxKind::TextRun) {
+        if (box.node && (box.node->tag == "img" || box.node->tag == "IMG" || box.node->imageData != nullptr)) {
+            RenderImage(box);
+        } else {
+            RenderTextRun(box);
+        }
+    }
+
+    for (const auto& child : box.children) {
+        Render(child);
+    }
+}
+
 void LayoutRenderer::Render() {
-    renderer.Clear(FindWindowBackground());
-    RenderBox(root);
+    renderer.Clear(Color(255,255,255));
+    Render(root);
 }
 
 void LayoutRenderer::RenderBox(const LayoutBox& box) {
     switch (box.kind) {
-        case BoxKind::Block:   RenderBlock(box);   break;
-        case BoxKind::Line:    RenderLine(box);     break;
-        case BoxKind::TextRun: RenderTextRun(box);  break;
+        case BoxKind::Block:
+            RenderBlock(box);
+            break;
+
+        case BoxKind::Line:
+            RenderLine(box, box.fontSize);
+            break;
+
+        case BoxKind::TextRun:
+            // FIX: Check for the presence of image data explicitly alongside the tag
+            if (box.node && (box.node->tag == "img" || box.node->tag == "IMG" || box.node->imageData != nullptr)) {
+                RenderImage(box);
+            } else {
+                RenderTextRun(box);
+            }
+            break;
     }
+
     for (const auto& child : box.children)
         RenderBox(child);
 }
+void LayoutRenderer::RenderImage(const LayoutBox& box) const {
+    if (!box.node) return;
 
+    // Check if the texture array has been resolved and loaded by the decoder thread
+    if (box.node->imageData && box.node->imageData->isLoaded && !box.node->imageData->pixels.empty()) {
+        const auto& imgData = *(box.node->imageData);
+        int srcW = imgData.intrinsicWidth;
+        int srcH = imgData.intrinsicHeight;
+
+        // Loop over the allocated layout screen box dimensions
+        for (int dy = 0; dy < box.height; ++dy) {
+            for (int dx = 0; dx < box.width; ++dx) {
+                // Map screen coordinate space back to texture coordinates
+                int sx = (dx * srcW) / box.width;
+                int sy = (dy * srcH) / box.height;
+
+                // Protect against out-of-bounds rounding checks
+                sx = std::clamp(sx, 0, srcW - 1);
+                sy = std::clamp(sy, 0, srcH - 1);
+
+                Color pixel = imgData.pixels[sy * srcW + sx];
+
+                // Check alpha channel transparency threshold
+                if (pixel.a == 0) continue;
+
+                renderer.DrawPixel(box.x + dx, box.y + dy, pixel);
+            }
+        }
+    } else {
+        // Fallback: Render a standard grey bounding box placeholder while loading
+        renderer.FillRect(box.x, box.y, box.width, box.height, Color(245, 245, 245));
+
+        // Draw placeholder border frames matching your solid border thickness rules
+        renderer.FillRect(box.x, box.y, box.width, 1, Color(200, 200, 200));
+        renderer.FillRect(box.x, box.y + box.height - 1, box.width, 1, Color(200, 200, 200));
+        renderer.FillRect(box.x, box.y, 1, box.height, Color(200, 200, 200));
+        renderer.FillRect(box.x + box.width - 1, box.y, 1, box.height, Color(200, 200, 200));
+    }
+}
 // ---------------------------------------------------------------------------
 
 void LayoutRenderer::RenderTextRun(const LayoutBox& box) {
     assert(box.node && box.node->parent);
-    const Style& s = box.node->parent->computedStyle;
+    const Style& s = box.node->parent ? box.node->parent->computedStyle : box.node->computedStyle;
 
-    Font& font = ResolveFont(s);
-    if (box.fontSize > 0) font.SetSize(box.fontSize);
+    Font* font = nullptr;
+    FontMetrics m = PrepareFontContext(s, box.fontSize, font);
 
-    FontMetrics m  = font.GetMetrics();
     int baseline   = box.y + m.ascent;
     Color color    = s.color;
 
     int cursorX = box.x;
     char prev   = 0;
     for (char c : box.text) {
-        if (prev) cursorX += font.GetKerning(c, prev).x >> 6;
-        const Glyph& g = font.GetGlyph(c);
+        if (prev) cursorX += font->GetKerning(c, prev).x >> 6;
+        const Glyph& g = font->GetGlyph(c);
         renderer.DrawGlyph(cursorX + g.bearingX, baseline - g.bearingY, g, color);
         cursorX += g.advance;
         prev = c;
@@ -548,21 +955,105 @@ void LayoutRenderer::RenderBlock(const LayoutBox& box) {
     if (!box.node) return;
     const Style& s = box.node->computedStyle;
 
-    if (s.hasBackground)
+    if (s.hasBackground) {
         renderer.FillRect(box.x, box.y, box.width, box.height, s.backgroundColor);
+    }
 
-    if (s.border.any()) {
-        const Border& b = s.border;
-        if (b.top)    renderer.FillRect(box.x,                       box.y,                        box.width,  b.top,    b.color);
-        if (b.bottom) renderer.FillRect(box.x,                       box.y + box.height - b.bottom, box.width, b.bottom, b.color);
-        if (b.left)   renderer.FillRect(box.x,                       box.y,                        b.left,    box.height, b.color);
-        if (b.right)  renderer.FillRect(box.x + box.width - b.right, box.y,                        b.right,   box.height, b.color);
+    int borderLeftWidth   = GetVisibleBorderWidth(s.BorderLeft);
+    int borderRightWidth  = GetVisibleBorderWidth(s.BorderRight);
+    int borderTopWidth    = GetVisibleBorderWidth(s.BorderTop);
+    int borderBottomWidth = GetVisibleBorderWidth(s.BorderBottom);
+
+    if (borderTopWidth > 0) {
+        RenderSingleBorderEdge(s.BorderTop, box.x, box.x + box.width, box.y, true);
+    }
+
+    if (borderBottomWidth > 0) {
+        int bottomY = box.y + box.height - borderBottomWidth;
+        RenderSingleBorderEdge(s.BorderBottom, box.x, box.x + box.width, bottomY, true);
+    }
+
+    if (borderLeftWidth > 0) {
+        int startY = box.y + borderTopWidth;
+        int endY   = box.y + box.height - borderBottomWidth;
+        RenderSingleBorderEdge(s.BorderLeft, startY, endY, box.x, false);
+    }
+
+    if (borderRightWidth > 0) {
+        int startY    = box.y + borderTopWidth;
+        int endY      = box.y + box.height - borderBottomWidth;
+        int fixedRegX = box.x + box.width - borderRightWidth;
+        RenderSingleBorderEdge(s.BorderRight, startY, endY, fixedRegX, false);
     }
 }
 
 // ---------------------------------------------------------------------------
 
-void LayoutRenderer::RenderLine(const LayoutBox& box) {
+void LayoutRenderer::RenderSingleBorderEdge(const Border_side& edge, int start, int end, int fixedCoord, bool isHorizontal) {
+    BorderStyle style = edge.borderStyle;
+    Color color       = edge.borderColor;
+    int thickness = GetVisibleBorderWidth(edge);
+
+
+    if (style == BorderStyle::none || style == BorderStyle::hidden || thickness <= 0) {
+        return;
+    }
+
+    switch (style) {
+        case BorderStyle::solid: {
+            if (isHorizontal) {
+                renderer.FillRect(start, fixedCoord, end - start, thickness, color);
+            } else {
+                renderer.FillRect(fixedCoord, start, thickness, end - start, color);
+            }
+            break;
+        }
+
+        case BorderStyle::double_border: {
+            int lineThickness = std::max(1, thickness / 3);
+            int gap = std::max(1, thickness - (lineThickness * 2));
+
+            if (isHorizontal) {
+                renderer.FillRect(start, fixedCoord, end - start, lineThickness, color);
+                renderer.FillRect(start, fixedCoord + lineThickness + gap, end - start, lineThickness, color);
+            } else {
+                renderer.FillRect(fixedCoord, start, lineThickness, end - start, color);
+                renderer.FillRect(fixedCoord + lineThickness + gap, start, lineThickness, end - start, color);
+            }
+            break;
+        }
+
+        case BorderStyle::dotted: {
+            int radius = std::max(1, thickness / 2);
+            int spacing = thickness * 2;
+
+            for (int pos = start + radius; pos <= end - radius; pos += spacing) {
+                int cx = isHorizontal ? pos : fixedCoord + radius;
+                int cy = isHorizontal ? fixedCoord + radius : pos;
+                renderer.DrawCircle(cx, cy, radius, color);
+            }
+            break;
+        }
+
+        case BorderStyle::dashed: {
+            int dashLen = std::max(4, thickness * 3);
+            int gapLen  = std::max(2, thickness * 2);
+
+            for (int pos = start; pos < end; pos += (dashLen + gapLen)) {
+                int currentDashLen = std::min(dashLen, end - pos);
+                if (isHorizontal) {
+                    renderer.FillRect(pos, fixedCoord, currentDashLen, thickness, color);
+                } else {
+                    renderer.FillRect(fixedCoord, pos, thickness, currentDashLen, color);
+                }
+            }
+            break;
+        }
+        default:
+            break;
+    }
+}
+void LayoutRenderer::RenderLine(const LayoutBox& box, int Text_Height) {
     if (box.children.empty()) return;
 
     // Check if any run in this line needs a text decoration.
@@ -575,7 +1066,7 @@ void LayoutRenderer::RenderLine(const LayoutBox& box) {
     for (const auto& run : box.children) {
         if (!run.node || !run.node->parent) continue;
         const Style& s = run.node->parent->computedStyle;
-        thickness  = s.TextDecorationThickness;
+        thickness  = ResolveLength(s.TextDecorationThickness, Text_Height);
         decorColor = s.TextDecorationColor;
         decorStyle = s.textDecorationStyle;
 
@@ -591,22 +1082,17 @@ void LayoutRenderer::RenderLine(const LayoutBox& box) {
     int y        = underline ? baseline + 2
                              : box.y + (box.lineAscent + box.lineDescent) / 2;
 
-    RenderDecoration(box, startX, endX, y);
+    RenderDecoration(decorStyle, decorColor, thickness, startX, endX, y);
 }
 
 // ---------------------------------------------------------------------------
 // All decoration styles isolated here — add new ones without touching
 // RenderLine().
-void LayoutRenderer::RenderDecoration(const LayoutBox& box,
-                                       int startX, int endX,
-                                       int y)
+void LayoutRenderer::RenderDecoration(
+        TextDecorationStyle style, Color color, int thickness,
+        int startX, int endX, int y)
 {
-    if (box.children.empty() || !box.children.front().node) return;
-    const Style& s = box.children.front().node->parent->computedStyle;
-
-    TextDecorationStyle style = s.textDecorationStyle;
-    Color color               = s.TextDecorationColor;
-    int   thickness           = s.TextDecorationThickness;
+    // Remove the style-reading lines that used to live here!
 
     switch (style) {
         case TextDecorationStyle::Solid: {

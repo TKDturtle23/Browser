@@ -80,114 +80,71 @@ void NormalizeDOM(Node& root)
 //
 // font_size: 0 means "inherit from parent" (Style's default is 16, but we
 // override the constructed Style to 0 below for tags that don't fix a size).
-static Style DefaultStyleForTag(const std::string& tag)
-{
+Style DefaultStyleForTag(const std::string& tag) {
     Style s;
-    s.font_size = 0; // sentinel: "not set by this tag, inherit"
-    s.backgroundColor = Color(255, 255, 255);
-    s.hasBackground = false;
-    s.margin_left_auto = false;
-    s.margin_right_auto = false;
-    if (tag == "div")
-    {
-        s.display = DisplayType::Block;
-    }
-    else if (tag == "p")
-    {
-        s.display = DisplayType::Block;
-        s.margin_top = 8;
-        s.margin_bottom = 8;
 
+    // Default fallback unit state across the board
+    s.font_size     = { 0.0f, LengthUnit::Inherit }; // Matches old 0 sentinel "inherit"
+    s.margin_left   = { 0.0f, LengthUnit::Px };
+    s.margin_right  = { 0.0f, LengthUnit::Px };
+    s.margin_top    = { 0.0f, LengthUnit::Px };
+    s.margin_bottom = { 0.0f, LengthUnit::Px };
+    s.padding_left  = { 0.0f, LengthUnit::Px };
+
+
+    if (tag == "p") {
+        s.margin_top    = { 16.0f, LengthUnit::Px };
+        s.margin_bottom = { 16.0f, LengthUnit::Px };
     }
-    else if (tag == "body")
-    {
-        s.display = DisplayType::Block;
-        s.font_size = 16;
-        s.margin_left = 8;
-        s.margin_right = 8;
-        s.margin_top = 8;
-        s.margin_bottom = 8;
+    else if (tag == "body") {
+        s.font_size     = { 16.0f, LengthUnit::Px };
+        s.margin_left   = { 8.0f, LengthUnit::Px };
+        s.margin_right  = { 8.0f, LengthUnit::Px };
+        s.margin_top    = { 8.0f, LengthUnit::Px };
+        s.margin_bottom = { 8.0f, LengthUnit::Px };
     }
-    else if (tag == "html")
-    {
-        s.display = DisplayType::Block;
-        s.font_size = 16;
+    else if (tag == "div") {
+        s.font_size     = { 0.0f, LengthUnit::Inherit };
     }
-    else if (tag == "h1")
-    {
-        s.display = DisplayType::Block;
-        s.font_size = 32;
-        s.font_bold = true;
-        s.margin_top = 21;
-        s.margin_bottom = 21;
+    else if (tag == "h1") {
+        s.font_size     = { 2.0f, LengthUnit::Em };
+        s.margin_top    = { 21.0f, LengthUnit::Px };
+        s.margin_bottom = { 21.0f, LengthUnit::Px };
     }
-    else if (tag == "h2")
-    {
-        s.display = DisplayType::Block;
-        s.font_size = 24;
-        s.font_bold = true;
-        s.margin_top = 19;
-        s.margin_bottom = 19;
+    else if (tag == "h2") {
+        s.font_size     = { 1.5f, LengthUnit::Em };
+        s.margin_top    = { 19.0f, LengthUnit::Px };
+        s.margin_bottom = { 19.0f, LengthUnit::Px };
     }
-    else if (tag == "h3")
-    {
-        s.display = DisplayType::Block;
-        s.font_size = 18;
-        s.font_bold = true;
-        s.margin_top = 18;
-        s.margin_bottom = 18;
+    else if (tag == "h3") {
+        s.font_size     = { 1.17f, LengthUnit::Em };
+        s.margin_top    = { 18.0f, LengthUnit::Px };
+        s.margin_bottom = { 18.0f, LengthUnit::Px };
     }
-    else if (tag == "h4")
-    {
-        s.display = DisplayType::Block;
-        s.font_size = 16;
-        s.font_bold = true;
-        s.margin_top = 21;
-        s.margin_bottom = 21;
+    else if (tag == "h4") {
+        s.font_size     = { 16.0f, LengthUnit::Px };
+        s.margin_top    = { 21.0f, LengthUnit::Px };
+        s.margin_bottom = { 21.0f, LengthUnit::Px };
     }
-    else if (tag == "h5")
-    {
-        s.display = DisplayType::Block;
-        s.font_size = 13;
-        s.font_bold = true;
-        s.margin_top = 22;
-        s.margin_bottom = 22;
+    else if (tag == "h5") {
+        s.font_size     = { 13.0f, LengthUnit::Px };
+        s.margin_top    = { 22.0f, LengthUnit::Px };
+        s.margin_bottom = { 22.0f, LengthUnit::Px };
     }
-    else if (tag == "h6")
-    {
-        s.display = DisplayType::Block;
-        s.font_size = 11;
-        s.font_bold = true;
-        s.margin_top = 24;
-        s.margin_bottom = 24;
+    else if (tag == "h6") {
+        s.font_size     = { 11.0f, LengthUnit::Px };
+        s.margin_top    = { 24.0f, LengthUnit::Px };
+        s.margin_bottom = { 24.0f, LengthUnit::Px };
     }
-    else if (tag == "b" || tag == "strong")
-    {
-        s.font_bold = true;
-    }
-    else if (tag == "i" || tag == "em")
-    {
-        s.font_italic = true;
-    }
-    else if (tag == "small")
-    {
-        s.font_size = 13;
-    }
-    else if (tag == "ul" || tag == "ol")
-    {
-        s.display = DisplayType::Block;
-        s.margin_top = 8;
-        s.margin_bottom = 8;
-        s.padding_left = 40;
-    }
-    else if (tag == "li")
-    {
-        s.display = DisplayType::Block;
+    else if (tag == "ul" || tag == "ol") {
+        s.font_size     = { 13.0f, LengthUnit::Px };
+        s.margin_top    = { 16.0f, LengthUnit::Px };
+        s.margin_bottom = { 16.0f, LengthUnit::Px };
+        s.padding_left  = { 40.0f, LengthUnit::Px };
     }
 
     return s;
 }
-
 static void ApplyAttributes(Node& node)
 {
     auto& a = node.attributes;
@@ -200,129 +157,93 @@ static void ApplyAttributes(Node& node)
             node.specifiedStyle.display = DisplayType::Inline;
     }
 
-    if (a.contains("font-size"))
-    {
-        node.specifiedStyle.font_size = std::stoi(a["font-size"]);
+    if (a.find("font-size") != a.end()) {
+        node.specifiedStyle.font_size = { static_cast<float>(std::stoi(a["font-size"])), LengthUnit::Px };
     }
 }
 
-void ComputeStyle(Node& node, const Style* parentStyle)
-{
+void ComputeStyle(Node& node, const Style* parentStyle) {
+    Style spec = node.specifiedStyle;
     Style tagDefaults = DefaultStyleForTag(node.tag);
     Style result;
 
-    // 1. Inherit font properties from parent (these are the CSS-inherited ones).
-    if (parentStyle)
-    {
-        result.font_family = parentStyle->font_family;
-        result.font_size   = parentStyle->font_size;
-        result.font_bold   = parentStyle->font_bold;
-        result.font_italic = parentStyle->font_italic;
-        result.textAlign = parentStyle->textAlign;
+    // --- Font Size Cascade ---
+    if (spec.set.font_size) {
+        result.set.font_size = true;
+        result.font_size = spec.font_size;
+    } else if (tagDefaults.font_size.unit != LengthUnit::Inherit) {
+        result.font_size = tagDefaults.font_size;
+    } else if (parentStyle) {
+        result.font_size = parentStyle->font_size;
+    } else {
+        result.font_size = { 16.0f, LengthUnit::Px }; // Final absolute fallback
     }
 
-    // 2. Apply UA defaults for the tag. Inherited properties only overwrite
-    //    when the tag actually sets them; layout properties (margin/padding/
-    //    display) overwrite unconditionally since they don't inherit.
-    if (tagDefaults.font_size != 0) result.font_size   = tagDefaults.font_size;
-    if (tagDefaults.font_bold)      result.font_bold   = true;
-    if (tagDefaults.font_italic)    result.font_italic = true;
+    // --- Margin Auto Layout Cascade ---
+    if (spec.set.margin_left && spec.margin_left.unit == LengthUnit::Auto) {
+        result.margin_left = { 0.0f, LengthUnit::Auto };
+    } else {
+        result.margin_left = spec.set.margin_left ? spec.margin_left : tagDefaults.margin_left;
+    }
 
-    result.display       = tagDefaults.display;
-    result.position      = tagDefaults.position;
-    result.margin_top    = tagDefaults.margin_top;
-    result.margin_bottom = tagDefaults.margin_bottom;
-    result.margin_left   = tagDefaults.margin_left;
-    result.margin_right  = tagDefaults.margin_right;
-    result.padding_top   = tagDefaults.padding_top;
-    result.padding_bottom = tagDefaults.padding_bottom;
-    result.padding_left  = tagDefaults.padding_left;
-    result.padding_right = tagDefaults.padding_right;
-    result.width  = tagDefaults.width;
-    result.height = tagDefaults.height;
-    result.margin_left_auto  = tagDefaults.margin_left_auto;
-    result.margin_right_auto = tagDefaults.margin_right_auto;
+    if (spec.set.margin_right && spec.margin_right.unit  == LengthUnit::Auto) {
+        result.margin_right = { 0.0f, LengthUnit::Auto };
+    } else {
+        result.margin_right = spec.set.margin_right ? spec.margin_right : tagDefaults.margin_right;
+    }
 
-// 3. Apply author-specified styles (highest priority).
-ApplyAttributes(node);
+    // --- Standard Dimensions/Paddings Assignments ---
+    result.margin_top    = spec.set.margin_top ? spec.margin_top : tagDefaults.margin_top;
+    result.margin_bottom = spec.set.margin_bottom ? spec.margin_bottom : tagDefaults.margin_bottom;
+    result.padding_left  = spec.set.padding_left ? spec.padding_left : tagDefaults.padding_left;
+    // Fix: Add missing margins and paddings!
+    result.padding_right  = spec.set.padding_right ? spec.padding_right : tagDefaults.padding_right;
+    result.padding_top    = spec.set.padding_top ? spec.padding_top : tagDefaults.padding_top;
+    result.padding_bottom = spec.set.padding_bottom ? spec.padding_bottom : tagDefaults.padding_bottom;
 
-    result.textDecoration = node.specifiedStyle.textDecoration;
-    result.TextDecorationColor = node.specifiedStyle.TextDecorationColor;
-    result.TextDecorationThickness = node.specifiedStyle.TextDecorationThickness;
-    result.textDecorationStyle = node.specifiedStyle.textDecorationStyle;
+    // Fix: Copy Dimensions (Required for block centering)
+    result.width = spec.width;
+    result.height = spec.height;
+    result.min_height = spec.min_height;
+    result.max_height = spec.max_height;
+    result.boxSizing = spec.boxSizing;
 
-if (node.specifiedStyle.font_size != 0)
-    result.font_size = node.specifiedStyle.font_size;
+    // Fix: Copy Borders (Required to see them)
+    result.BorderTop = spec.BorderTop;
+    result.BorderBottom = spec.BorderBottom;
+    result.BorderLeft = spec.BorderLeft;
+    result.BorderRight = spec.BorderRight;
 
-// resolve em units now that parent font_size is known
-if (node.specifiedStyle.font_size_em > 0.0f) {
-    int base = parentStyle ? parentStyle->font_size : 16;
-    result.font_size = static_cast<int>(node.specifiedStyle.font_size_em * base);
-}
-if (node.specifiedStyle.display != DisplayType::Inline)
-    result.display = node.specifiedStyle.display;
+    // Fix: Copy Typography & Backgrounds (Required for text centering)
+    if (spec.set.textAlign) { // ensure you track if it was explicitly parsed
+        result.textAlign = spec.textAlign;
+    } else if (parentStyle) {
+        result.textAlign = parentStyle->textAlign;
+    } else {
+        result.textAlign = tagDefaults.textAlign; // usually Left
+    }
+    result.color = spec.color;
+    result.hasBackground = spec.hasBackground;
+    result.backgroundColor = spec.backgroundColor;
+    result.font_bold = spec.font_bold;
+    result.font_italic = spec.font_italic;
 
-if (node.specifiedStyle.font_bold)
-    result.font_bold = true;
-if (node.specifiedStyle.textAlign != TextAlign::Left)
-    result.textAlign = node.specifiedStyle.textAlign;
-if (node.specifiedStyle.font_italic)
-    result.font_italic = true;
+    result.textDecoration = spec.textDecoration;
+    result.textDecorationStyle = spec.textDecorationStyle;
+    result.TextDecorationColor = spec.TextDecorationColor;
+    result.TextDecorationThickness = spec.TextDecorationThickness;
 
-// color inherits, so only override if explicitly set
-if (node.specifiedStyle.color.r != 0
- || node.specifiedStyle.color.g != 0
- || node.specifiedStyle.color.b != 0)
-{
-    result.color = node.specifiedStyle.color;
-}
+    result.whiteSpace = spec.whiteSpace;
+    result.textOverflow = spec.textOverflow;
 
-// background does not inherit
-if (node.specifiedStyle.hasBackground) {
-    result.hasBackground   = true;
-    result.backgroundColor = node.specifiedStyle.backgroundColor;
-}
-
-// border does not inherit
-if (node.specifiedStyle.border.any()) {
-    result.border = node.specifiedStyle.border;
-}
-
-// layout properties — only override if author explicitly set them
-// (non-zero is our sentinel for "was set", same pattern as font_size)
-if (node.specifiedStyle.margin_top    != 0) result.margin_top    = node.specifiedStyle.margin_top;
-if (node.specifiedStyle.margin_bottom != 0) result.margin_bottom = node.specifiedStyle.margin_bottom;
-if (node.specifiedStyle.margin_left   != 0) result.margin_left   = node.specifiedStyle.margin_left;
-if (node.specifiedStyle.margin_right  != 0) result.margin_right  = node.specifiedStyle.margin_right;
-if (node.specifiedStyle.padding_top    != 0) result.padding_top    = node.specifiedStyle.padding_top;
-if (node.specifiedStyle.padding_bottom != 0) result.padding_bottom = node.specifiedStyle.padding_bottom;
-if (node.specifiedStyle.padding_left   != 0) result.padding_left   = node.specifiedStyle.padding_left;
-if (node.specifiedStyle.padding_right  != 0) result.padding_right  = node.specifiedStyle.padding_right;
-if (node.specifiedStyle.width  != -1) result.width  = node.specifiedStyle.width;
-if (node.specifiedStyle.height != -1) result.height = node.specifiedStyle.height;
-if (node.specifiedStyle.margin_left_auto) {
-    result.margin_left = 0;
-    result.margin_left_auto = true;
-} else if (node.specifiedStyle.margin_left != 0) {
-    result.margin_left = node.specifiedStyle.margin_left;
-}
-
-if (node.specifiedStyle.margin_right_auto) {
-    result.margin_right = 0;
-    result.margin_right_auto = true;
-} else if (node.specifiedStyle.margin_right != 0) {
-    result.margin_right = node.specifiedStyle.margin_right;
-}
-
+    // Save the computed style map safely back onto the DOM tracking node
     node.computedStyle = result;
-    // 4. Recurse.
-    for (auto& child : node.children)
+
+    for (auto &child : node.children)
     {
-        child->parent = &node;
         ComputeStyle(*child, &node.computedStyle);
     }
 }
-
 Node Parser::Parse(const std::vector<Token>& tokens) {
 
     Node root;

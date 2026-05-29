@@ -23,6 +23,10 @@ public:
         Color color
     );
 
+    void FillRectBeveled(int x, int y, int w, int h, int bevelSize, Color color);
+
+    void DrawRectBeveled(int x, int y, int w, int h, int bevelSize, Color color);
+
     void DrawLine(int x0, int y0, int x1, int y1, Color color);
 
     void FillRectWithBorder(
@@ -44,6 +48,7 @@ public:
     );
     int GetWidth() const;
     int GetHeight() const;
+    void DrawCircle(int cx, int cy, int radius, Color color); // draws an anti-aliased circle
     void DrawWavyLine(
         int x0, int y0,
         int x1, int y1,
@@ -52,6 +57,8 @@ public:
         int thickness,
         Color color
     );
+
+    void CopyFromBuffer(int x, int y, int w, int h, const std::vector<Color> &buffer);
 private:
     int width;
     int height;

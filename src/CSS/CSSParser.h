@@ -22,7 +22,7 @@ struct CSSRule {
 
 class CSSParser {
 public:
-    std::vector<CSSRule> Parse(const std::string& css);
+    std::vector<CSSRule> Parse(const std::string &css, bool isInlineStyle);
     void Apply(const std::vector<CSSRule>& rules, Node& root, int viewportWidth, int viewportHeight);
 
 private:

@@ -22,6 +22,8 @@ set(USE_NGHTTP2 OFF CACHE BOOL "" FORCE)
 set(USE_LIBIDN2 OFF CACHE BOOL "" FORCE)
 add_subdirectory(submodules/curl)
 add_subdirectory(submodules/freetype)
+add_subdirectory(submodules/libwebp)
+add_subdirectory(submodules/ImageLoader/src)
 
 add_executable(Browser
         src/main.cpp
@@ -38,8 +40,14 @@ add_executable(Browser
         src/CSS/CSSTokenizer.cpp
         src/CSS/CSSParser.cpp
         src/Platform/Platform_win32.cpp
+        src/BrowserCacheManager.cpp
+        src/Window/ViewportManager.cpp
+        src/Window/WindowManager.cpp
+        src/Window/UI/InterfaceManager.cpp
+        src/Images/SvgViewer.cpp
 )
-target_link_libraries(Browser PRIVATE freetype CURL::libcurl)
+target_link_libraries(Browser PRIVATE freetype CURL::libcurl Euclase_ImageViewer)
+target_include_directories(Browser PRIVATE "submodules/ImageLoader/src" "src/")
 
 
 

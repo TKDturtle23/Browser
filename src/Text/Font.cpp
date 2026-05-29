@@ -75,8 +75,7 @@ FontMetrics Font::GetMetrics()
 
     m.ascent  = face->size->metrics.ascender >> 6;
     m.descent = -(face->size->metrics.descender >> 6);
-    m.lineGap = face->size->metrics.height >> 6
-              - (m.ascent + m.descent);
+    m.lineGap = (face->size->metrics.height >> 6) - (m.ascent + m.descent);
 
     m.lineHeight = m.ascent + m.descent + m.lineGap;
 

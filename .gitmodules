@@ -4,3 +4,9 @@
 [submodule "submodules/curl"]
     path = submodules/curl
     url = https://github.com/curl/curl.git
+[submodule "submodules/ImageLoader"]
+	path = submodules/ImageLoader
+	url = https://github.com/TKDturtle23/ImageLoader
+[submodule "libwebp"]
+	path = submodules/libwebp
+	url = https://github.com/webmproject/libwebp.git
