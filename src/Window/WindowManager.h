@@ -6,6 +6,7 @@
 #define BROWSER_WINDOWMANAGER_H
 #include <memory>
 
+#include "DebugWindowManager.h"
 #include "ViewportManager.h"
 #include "../Platform/Platform.h"
 #include "../Render/Renderer.h"
@@ -23,16 +24,22 @@ public:
     WindowManager(int width, int height);
     ~WindowManager();
 
+    void FeedDebugDOM();
+
     void Run();
 
 private:
     bool ShiftPressed = false;
     void UpdateUI();
+
+
+    void SetDebugNetworkEntries(const std::vector<DebugNetEntry> &entries);
+
     Renderer renderer;
     std::unique_ptr<Platform> platform;
 
     std::function<void()> OnRender;
-    InterfaceManager ui_manager;
+    DebugInterfaceManager ui_manager;
 
     std::string currentTabUrl = "localhost:8080";
     bool isTabActive = true;
@@ -40,6 +47,7 @@ private:
     std::vector<TabState> tabs = {};
     size_t activeTabIndex = 0; // Tracks which tab is selected
     JavaScriptEngine jsEngine;
+    std::unique_ptr<DebugWindowManager> debugWindow;
 };
 
 

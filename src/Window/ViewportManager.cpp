@@ -22,6 +22,8 @@
 #include "ImageViewer.h"
 #include "Images/SvgViewer.h"
 #include "JavaScriptEngine/JavaScriptEngine.h"
+#include "JavaScriptEngine/JS_Functions.h"
+
 static std::string ConvertUrlToCachePath(const std::string& url) {
     std::string safeName = url;
     // Replace characters that are illegal or problematic in file systems
@@ -80,12 +82,24 @@ ViewportManager::ViewportManager(const int width, const int height, JavaScriptEn
                                                                           std::filesystem::current_path().string() +
                                                                           "/cache"), dom(), engine(engine) {
     tabContext = engine.create_tab_context();
+
 }
 
 ViewportManager::~ViewportManager() {
     engine.destroy_tab_context(tabContext);
 }
-
+void ViewportManager::FindTitle() {
+    if (auto title_node = Parser::FindNodeByTag(&dom, "title")) { // get title
+        for (auto &c : title_node->children) {
+            if (c->type == NodeType::Text) {
+                title = c->text;
+            }
+        }
+    }
+    else {
+        title = "";
+    }
+}
 void ViewportManager::Init() {
 
     if (CurrentLink.empty()) {
@@ -107,8 +121,7 @@ void ViewportManager::Init() {
     // parse once
 
     dom = parser.Parse(tokens); // no renderer dependency here
-
-
+    FindTitle();
 
 
     ApplyAndLayout();
@@ -118,19 +131,35 @@ void ViewportManager::SetLink(const std::string &Link) {
     CurrentLink = Link;
     LinkChanged = true;
 }
-
+bool NeedReconstruct(Node *dom) {
+    if (dom->Reconstruct) {
+        return true;
+    }
+    for (const auto& c : dom->children) {
+        if (NeedReconstruct(c.get())) {
+            return true;
+        }
+    }
+    return false;
+}
 void ViewportManager::Update() {
+
     if (LinkChanged) {
         LinkChanged = false;
         if (tabContext) {
             engine.destroy_tab_context(tabContext);
             tabContext = engine.create_tab_context();
+
         }
         Init();
 
     }
+    // check if reconstruct
+    UpdateNeeded |= NeedReconstruct(&dom);
+
     if (UpdateNeeded) {
         UpdateNeeded = false;
+        FindTitle();
         layout.Update(dom);
     }
 }
@@ -140,6 +169,7 @@ void ViewportManager::Resize(int width, int height) {
     UpdateNeeded = true;
 }
 void ViewportManager::Step() {
+    JavascriptFunctions::SetNewContext({&dom, });
     // Tell the engine to target this specific tab's runtime context before pumping events
     engine.set_active_context(tabContext);
     engine.Step();
@@ -228,6 +258,7 @@ void LoadImageResourceSync(Node& imgNode, const std::string& absoluteUrl, Browse
     std::cout << "[Pipeline] Image ready inline: " << width << "x" << height << std::endl;
 }
 void ViewportManager::ApplyAndLayout() {
+    JavascriptFunctions::SetNewContext({&dom, &title});
     // re-apply CSS with current viewport size
     CSSParser cssParser;
     std::vector<CSSRule> rules;
@@ -309,6 +340,7 @@ void ViewportManager::ApplyAndLayout() {
                 std::string absoluteUrl = ResolveUrl(CurrentLink, srcIt->second);
                 std::string script = cache.GetResource(absoluteUrl);
                 node.code = script;
+                node.script_name = srcIt->second;
             }
             else {
                 // Case B: Embedded Inline Script <script>console.log("hi");</script>
@@ -319,6 +351,7 @@ void ViewportManager::ApplyAndLayout() {
                     }
                 }
                 node.code = inlineScript;
+                node.script_name = "inline";
             }
         }
         for (auto& child : node.children) {
@@ -342,13 +375,14 @@ std::vector<Color> ViewportManager::OnRender(int width, int height) {
 }
 void ViewportManager::RunNodeScripts(Node &node) {
     if (!node.code.empty()) {
-        engine.Run(node.code);
+        engine.Run(node.code, node.script_name);
     }
     for (auto &child : node.children) {
         RunNodeScripts(*child);
     }
 }
 void ViewportManager::StartScripts() {
+    JavascriptFunctions::SetNewContext({&dom, &title});
     engine.set_active_context(tabContext);
 RunNodeScripts(dom);
 }

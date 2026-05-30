@@ -8,10 +8,60 @@ std::vector<Token> Tokenizer::tokenize(const std::string& html) {
 
     while (i < html.length()) {
 
-        // TAGS
+        // TAGS, COMMENTS, & DOCTYPES
         if (html[i] == '<') {
 
-            // Closing tag (e.g., </div>)
+            // ─── 1. HANDLING HTML COMMENTS () ───
+            if (i + 3 < html.length() && html[i + 1] == '!' && html[i + 2] == '-' && html[i + 3] == '-') {
+                size_t commentStart = i + 4;
+                size_t commentEnd = html.find("-->", commentStart);
+
+                if (commentEnd != std::string::npos) {
+                    std::string commentText = html.substr(commentStart, commentEnd - commentStart);
+                    tokens.push_back(Token(TokenType::Comment, commentText, {}));
+                    i = commentEnd + 3; // Advance past "-->"
+                } else {
+                    std::string commentText = html.substr(commentStart);
+                    tokens.push_back(Token(TokenType::Comment, commentText, {}));
+                    i = html.length();
+                }
+                continue;
+            }
+
+            // ─── 2. HANDLING DOCTYPE (<!DOCTYPE html>) ───
+            if (i + 8 < html.length() && html[i + 1] == '!') {
+                std::string lookahead = html.substr(i + 1, 8);
+                std::transform(lookahead.begin(), lookahead.end(), lookahead.begin(), ::tolower);
+
+                if (lookahead == "!doctype") {
+                    i += 9; // Advance past "<!doctype"
+
+                    // Skip any whitespace after !doctype
+                    while (i < html.length() && std::isspace(html[i])) {
+                        i++;
+                    }
+
+                    std::string doctypeContent;
+                    while (i < html.length() && html[i] != '>') {
+                        doctypeContent += html[i];
+                        i++;
+                    }
+
+                    // Trim trailing whitespace from the content (e.g., "html ")
+                    while (!doctypeContent.empty() && std::isspace(doctypeContent.back())) {
+                        doctypeContent.pop_back();
+                    }
+                    std::transform(doctypeContent.begin(), doctypeContent.end(), doctypeContent.begin(), ::tolower);
+
+                    // Emit clean Doctype token: Tag name becomes "html", attributes are empty
+                    tokens.push_back(Token(TokenType::Doctype, doctypeContent, {}));
+
+                    if (i < html.length() && html[i] == '>') i++;
+                    continue;
+                }
+            }
+
+            // ─── 3. HANDLING CLOSING TAGS (e.g., </div>) ───
             if (i + 1 < html.length() && html[i + 1] == '/') {
                 i += 2;
                 std::string tag;
@@ -26,7 +76,7 @@ std::vector<Token> Tokenizer::tokenize(const std::string& html) {
                 continue;
             }
 
-            // Opening or Self-Closing tag
+            // ─── 4. HANDLING OPENING OR SELF-CLOSING TAGS ───
             i++;
             std::string tag;
             while (i < html.length() && html[i] != ' ' && html[i] != '/' && html[i] != '>') {
@@ -38,16 +88,13 @@ std::vector<Token> Tokenizer::tokenize(const std::string& html) {
             bool isSelfClosing = false;
 
             while (i < html.length() && html[i] != '>') {
-                // skip whitespace
                 while (i < html.length() && std::isspace(html[i])) {
                     i++;
                 }
 
-                // Check for trailing slash indicating self-closing tag (e.g., />)
                 if (i < html.length() && html[i] == '/') {
                     isSelfClosing = true;
                     i++;
-                    // skip any trailing spaces between / and >
                     while (i < html.length() && std::isspace(html[i])) {
                         i++;
                     }
@@ -60,25 +107,21 @@ std::vector<Token> Tokenizer::tokenize(const std::string& html) {
                 std::string attrName;
                 std::string attrValue;
 
-                // parse attribute name
                 while (i < html.length() && html[i] != '=' && !std::isspace(html[i]) && html[i] != '>' && html[i] != '/') {
                     attrName += html[i];
                     i++;
                 }
 
-                // skip whitespace
                 while (i < html.length() && std::isspace(html[i])) {
                     i++;
                 }
 
-                // parse value
                 if (i < html.length() && html[i] == '=') {
                     i++;
                     while (i < html.length() && std::isspace(html[i])) {
                         i++;
                     }
 
-                    // quoted value
                     if (i < html.length() && (html[i] == '"' || html[i] == '\'')) {
                         char quote = html[i];
                         i++;
@@ -96,26 +139,21 @@ std::vector<Token> Tokenizer::tokenize(const std::string& html) {
                 }
             }
 
-            // Emit the opening tag
-            tokens.push_back(
-                Token(tag == "!doctype" ? TokenType::Doctype : TokenType::OpenTag, tag, attributes)
-            );
+            // Emit the opening tag (We no longer need the ternary fallback here!)
+            tokens.push_back(Token(TokenType::OpenTag, tag, attributes));
 
-            // Emit the closing tag immediately if it's self-closing
             if (isSelfClosing) {
                 tokens.push_back(Token(TokenType::CloseTag, tag, {}));
             }
 
             if (i < html.length() && html[i] == '>') i++;
 
-            // ─── CRITICAL FIX: SCRIPT & STYLE BYPASS ───
-            // Only parse internal content if it wasn't a self-closed script/style (e.g. <script src="..." />)
+            // ─── SCRIPT & STYLE BYPASS ───
             if (!isSelfClosing && (tag == "script" || tag == "style")) {
                 std::string rawContent;
                 std::string closeTarget = "</" + tag + ">";
                 size_t startPos = i;
-                
-                // Search for case-insensitive closing block sequence
+
                 size_t endPos = std::string::npos;
                 for (size_t j = startPos; j + closeTarget.length() <= html.length(); ++j) {
                     std::string segment = html.substr(j, closeTarget.length());
@@ -128,9 +166,8 @@ std::vector<Token> Tokenizer::tokenize(const std::string& html) {
 
                 if (endPos != std::string::npos) {
                     rawContent = html.substr(startPos, endPos - startPos);
-                    i = endPos; // Skip the pointer directly to the closing tag position
+                    i = endPos;
                 } else {
-                    // Malformed file handling (script tag never closes)
                     rawContent = html.substr(startPos);
                     i = html.length();
                 }
@@ -139,7 +176,6 @@ std::vector<Token> Tokenizer::tokenize(const std::string& html) {
                     tokens.push_back(Token(TokenType::Text, rawContent, {}));
                 }
             }
-            // ───────────────────────────────────────────
 
             continue;
         }

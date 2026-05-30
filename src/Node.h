@@ -41,6 +41,7 @@ enum class NodeType {
     Element,
     Text,
     Image,
+    Comment,
 };
 struct ImageData {
     std::vector<Color> pixels; // Flat array outputted from your custom decoder
@@ -238,7 +239,11 @@ struct Node {
     NodeType type;
 
     std::string tag;
+    std::string id;
+    std::string class_name;
+
     std::string code;
+    std::string script_name;
 
     std::string text;
 
@@ -259,6 +264,7 @@ struct Node {
     Style computedStyle;
     Style specifiedStyle;
 
+    bool Reconstruct; // update this node and children
 
     // Attached asset payload if type == NodeType::Image
     std::shared_ptr<ImageData> imageData = nullptr;

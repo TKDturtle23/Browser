@@ -12,6 +12,7 @@ enum class TokenType {
     CloseTag,
     Text,
     Doctype,
+    Comment,
 };
 
 struct Token {

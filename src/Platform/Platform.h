@@ -25,7 +25,8 @@ enum class EventType {
     KeyRelease,
     MouseMove,
     MouseButtonPress,
-    MouseButtonRelease
+    MouseButtonRelease,
+    MouseWheel,
 };
 enum class Key {
     Unknown = 0,
@@ -62,7 +63,7 @@ struct Event {
     int x = 0;              // Mouse X coordinate
     int y = 0;              // Mouse Y coordinate
     int button = 0;         // 1 = Left, 2 = Right, 3 = Middle
-
+    int WheelDelta = 0;
     int width = 0;
     int height = 0;
 

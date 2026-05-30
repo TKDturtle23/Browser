@@ -342,7 +342,7 @@ bool Platform_Win32::PollEvent(Event& event) {
     MSG msg;
     // Internal loop to bypass unhandled messages (like WM_TIMER or WM_PAINT)
     // without spamming EventType::None back to the application loop.
-    while (PeekMessage(&msg, nullptr, 0, 0, PM_REMOVE)) {
+    while (PeekMessage(&msg, hwnd, 0, 0, PM_REMOVE)) {
         TranslateMessage(&msg);
         DispatchMessage(&msg);
 
@@ -395,7 +395,18 @@ bool Platform_Win32::PollEvent(Event& event) {
                 event.key = myKey;
                 return true;
             }
+            case WM_MOUSEWHEEL: {
+                event.type = EventType::MouseWheel;
 
+                // Extraction requires pulling the high-word from wParam
+                // and casting it to a short to preserve negative (downward) values.
+                short rawDelta = GET_WHEEL_DELTA_WPARAM(msg.wParam);
+
+                // Convert to a clean notch multiplier (e.g., +1 for up, -1 for down)
+                event.WheelDelta = static_cast<int>(rawDelta) / WHEEL_DELTA;
+
+                return true;
+            }
             case WM_MOUSEMOVE: {
                 event.type = EventType::MouseMove;
                 event.x = GET_X_LPARAM(msg.lParam);

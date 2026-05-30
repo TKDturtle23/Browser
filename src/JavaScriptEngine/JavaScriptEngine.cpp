@@ -28,14 +28,16 @@ void JavaScriptEngine::InjectData() {
 
     qjs_engine.register_nested_function("browser.tabs.utils.test", [](const JSArgs& args) -> std::string {
     std::cout << "-> Deeply nested layout execution triggered successfully!" << std::endl;
+
+
     return "Nested Bridge Action Succeeded!";
 });
 
 
 }
 
-void JavaScriptEngine::Run(const std::string &script_data) {
-    qjs_engine.execute(script_data);
+std::string JavaScriptEngine::Run(const std::string &script_data, const std::string &script_name) {
+    return qjs_engine.execute(script_data, script_name);
 }
 
 bool JavaScriptEngine::Step() const {
@@ -46,9 +48,7 @@ void JavaScriptEngine::RunAll() const {
     qjs_engine.run_event_loop();
 }
 
-void JavaScriptEngine::Reset() {
-    qjs_engine.reset();
-}
+
 
 JSContext * JavaScriptEngine::create_tab_context() {
     return qjs_engine.create_tab_context();
@@ -58,6 +58,10 @@ void JavaScriptEngine::set_active_context(JSContext *ctx) {
     qjs_engine.set_active_context(ctx);
 }
 
+
+
 void JavaScriptEngine::destroy_tab_context(JSContext *ctx) {
     qjs_engine.destroy_tab_context(ctx);
 }
+
+

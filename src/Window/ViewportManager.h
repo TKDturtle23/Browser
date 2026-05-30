@@ -14,6 +14,9 @@ class ViewportManager {
 public:
     ViewportManager(int width, int height, JavaScriptEngine& engine);
     ~ViewportManager();
+
+
+
     void Init();
     void SetLink(const std::string &Link);
     void Update();
@@ -30,8 +33,11 @@ public:
     int GetHeight() {return renderer.GetHeight(); }
 
     void StartScripts();
-
+    const Node* GetDOMRoot() {return &dom; }
+    std::string GetTitle() {return title.empty() ? CurrentLink : title; }
 private:
+    std::string title;
+    void FindTitle();
     std::string CurrentLink;
     bool LinkChanged = false;
     bool UpdateNeeded = false;

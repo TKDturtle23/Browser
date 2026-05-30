@@ -57,7 +57,6 @@ std::string NormalizeText(const std::string& text)
 void NormalizeDOM(Node& root)
 {
     bool hasHtml = false;
-
     for (auto& c : root.children)
     {
         if (c->tag == "html")
@@ -70,8 +69,27 @@ void NormalizeDOM(Node& root)
         html->type = NodeType::Element;
         html->tag = "html";
 
-        html->children = std::move(root.children);
+        // Keep a temporary list for things that stay outside <html> (like DOCTYPE)
+        std::vector<std::unique_ptr<Node>> outsideNodes;
+
+        for (auto& c : root.children) {
+            if (c->type == NodeType::Doctype || c->type == NodeType::Comment) {
+                // Keep doctypes and top-level comments attached directly to Document
+                outsideNodes.push_back(std::move(c));
+            } else {
+                // Everything else (body, tags, text) gets wrapped by <html>
+                html->children.push_back(std::move(c));
+            }
+        }
+
         root.children.clear();
+
+        // Re-assign top level nodes cleanly back to root
+        for (auto& node : outsideNodes) {
+            root.children.push_back(std::move(node));
+        }
+
+        // Append the wrapped html subtree as a sibling next to the DOCTYPE
         root.children.push_back(std::move(html));
     }
 }
@@ -149,16 +167,11 @@ static void ApplyAttributes(Node& node)
 {
     auto& a = node.attributes;
 
-    if (a.contains("display"))
-    {
-        if (a["display"] == "block")
-            node.specifiedStyle.display = DisplayType::Block;
-        else if (a["display"] == "inline")
-            node.specifiedStyle.display = DisplayType::Inline;
+    if (a.contains("id")) {
+        node.id = a["id"];
     }
-
-    if (a.find("font-size") != a.end()) {
-        node.specifiedStyle.font_size = { static_cast<float>(std::stoi(a["font-size"])), LengthUnit::Px };
+    if (a.contains("class")) {
+        node.class_name = a["class"];
     }
 }
 
@@ -253,88 +266,82 @@ Node Parser::Parse(const std::vector<Token>& tokens) {
 
     nodeStack.push(&root);
 
-    for (const Token& token : tokens) {
+for (const Token& token : tokens) {
+    std::cout << "Token: " << (int)token.type << " | Value: " << token.value << std::endl;
+    switch (token.type) {
+        case TokenType::Doctype: {
+            auto node = std::make_unique<Node>();
+            node->type = NodeType::Doctype;
+            node->tag = token.value;
+            node->parent = nodeStack.top(); // This points to 'root' (Document)
+            node->attributes = token.attributes;
+            ApplyAttributes(*node);
 
-        switch (token.type) {
-            case TokenType::Doctype: {
-
-                auto node = std::make_unique<Node>();
-
-                node->type = NodeType::Doctype;
-                node->text = token.value;
-                node->parent = nodeStack.top();
-                node->attributes = token.attributes;
-                nodeStack.top()->children.push_back(
-                    std::move(node)
-                );
-
-                break;
-            }
-            case TokenType::OpenTag: {
-
-                auto node = std::make_unique<Node>();
-
-                node->type = NodeType::Element;
-                node->tag = token.value;
-                node->parent = nodeStack.top();
-                node->attributes = token.attributes;
-                Node* rawPtr = node.get();
-
-                nodeStack.top()->children.push_back(
-                    std::move(node)
-                );
-
-                // ONLY push non-void elements
-                if (!IsVoidElement(token.value)) {
-                    nodeStack.push(rawPtr);
-                }
-
-                break;
-            }
-
-            case TokenType::Text: {
-
-                auto node = std::make_unique<Node>();
-
-                node->type = NodeType::Text;
-                node->text = NormalizeText(token.value);
-                node->parent = nodeStack.top();
-
-                nodeStack.top()->children.push_back(
-                    std::move(node)
-                );
-
-                break;
-            }
-
-            case TokenType::CloseTag: {
-                if (nodeStack.size() <= 1) break;
-
-                const std::string& closingTag = token.value;
-
-                // Search for matching tag without disturbing the stack first
-                // Walk a copy to find it
-                std::vector<Node*> toRestore;
-
-                while (nodeStack.size() > 1) {
-                    Node* top = nodeStack.top();
-                    nodeStack.pop();
-
-                    if (top->tag == closingTag) break;  // found it, discard it
-                    toRestore.push_back(top);           // unclosed tag above match
-                }
-
-                // Re-push in original order (toRestore is reversed, so iterate backwards)
-                for (int i = (int)toRestore.size() - 1; i >= 0; i--) {
-                    nodeStack.push(toRestore[i]);
-                }
-                break;
-            }
-            default:
-                std::cout << "Unknown token type" << std::endl;
-                break;
+            // Attached directly to Document root.
+            // Crucial: We do NOT push this onto nodeStack!
+            nodeStack.top()->children.push_back(std::move(node));
+            break;
         }
+        case TokenType::OpenTag: {
+            auto node = std::make_unique<Node>();
+            node->type = NodeType::Element;
+            node->tag = token.value;
+            node->parent = nodeStack.top();
+            node->attributes = token.attributes;
+
+            Node* rawPtr = node.get();
+            ApplyAttributes(*node);
+            nodeStack.top()->children.push_back(std::move(node));
+
+            // ONLY push non-void elements onto the stack to become parents
+            if (!IsVoidElement(token.value)) {
+                nodeStack.push(rawPtr);
+            }
+            break;
+        }
+        case TokenType::Text: {
+            auto node = std::make_unique<Node>();
+            node->type = NodeType::Text;
+            node->text = NormalizeText(token.value);
+            node->parent = nodeStack.top();
+            node->attributes = token.attributes;
+            ApplyAttributes(*node);
+            nodeStack.top()->children.push_back(std::move(node));
+            break;
+        }
+        case TokenType::Comment: {
+            auto node = std::make_unique<Node>();
+            node->type = NodeType::Comment;
+            node->text = token.value;
+            node->parent = nodeStack.top();
+            ApplyAttributes(*node);
+            nodeStack.top()->children.push_back(std::move(node));
+            break; // <--- FIX: This was missing! Without this, it fell through to CloseTag
+        }
+        case TokenType::CloseTag: {
+            if (nodeStack.size() <= 1) break;
+
+            const std::string& closingTag = token.value;
+            std::vector<Node*> toRestore;
+
+            while (nodeStack.size() > 1) {
+                Node* top = nodeStack.top();
+                nodeStack.pop();
+
+                if (top->tag == closingTag) break;
+                toRestore.push_back(top);
+            }
+
+            for (int i = (int)toRestore.size() - 1; i >= 0; i--) {
+                nodeStack.push(toRestore[i]);
+            }
+            break;
+        }
+        default:
+            std::cout << "Unknown token type" << std::endl;
+            break;
     }
+}
     NormalizeDOM(root);
 
     return root;
@@ -380,4 +387,16 @@ void Parser::PrintNode(const Node& node, int depth) {
     for (const auto& child : node.children) {
         PrintNode(*child, depth + 1);
     }
+}
+
+Node * Parser::FindNodeByTag(Node *dom, std::string tag) {
+    if (dom->tag  == tag) {
+        return dom;
+    }
+    for (auto& child : dom->children) {
+        if (auto found = FindNodeByTag(child.get(), tag)) {
+            return found;
+        }
+    }
+    return nullptr;
 }

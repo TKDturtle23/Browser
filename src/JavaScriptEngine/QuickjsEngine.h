@@ -10,7 +10,10 @@
 #include <string>
 #include <vector>
 
+#include "Node.h"
 #include "quickjs.h"
+
+struct MockHTMLElement;
 
 // Custom exception class for handling JS runtime/compile errors elegantly
 class JavaScriptException : public std::runtime_error {
@@ -26,8 +29,11 @@ struct CallbackData {
     JSCallback callback;
     JSContext* ctx;
 };
+
 class QuickjsEngine {
 public:
+    void register_node_class();
+
     QuickjsEngine();
     ~QuickjsEngine();
 
@@ -65,13 +71,18 @@ public:
 
     // Fully executes the event loop until absolutely all async jobs are finished
     void run_event_loop() const;
-    void reset();
+
     std::vector<CallbackData*> m_allocated_callbacks; // For tracking and cleanup
+
+    void initialize_dom_bridge();
+    void initialize_console() const;
+    JSValue wrap_html_element(Node* element) const;
+    static JSClassID get_node_class_id();
 private:
     JSValue resolve_or_create_path(const std::string& path, std::string& out_final_key) const;
     struct Impl;
     std::unique_ptr<Impl> impl;
-
+    static JSClassID s_node_class_id;
 
 };
 

@@ -59,6 +59,10 @@ add_executable(Browser
         src/Platform/Platform_XCB.cpp
         src/JavaScriptEngine/JavaScriptEngine.cpp
         src/JavaScriptEngine/QuickjsEngine.cpp
+        src/JavaScriptEngine/JS_Functions.cpp
+        src/NodeToHTML.cpp
+        src/Window/Debugwindowmanager.cpp
+        src/Logger.cpp
 )
 
 

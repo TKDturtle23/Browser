@@ -13,8 +13,9 @@
 void ComputeStyle(Node& node, const Style* parentStyle = nullptr);
 class Parser {
     public:
-    Node Parse(const std::vector<Token>& tokens);
+    static Node Parse(const std::vector<Token>& tokens);
     void PrintNode(const Node& node, int depth = 0);
+    static Node *FindNodeByTag(Node* dom, std::string tag);
 };
 
 

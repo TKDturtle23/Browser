@@ -250,7 +250,7 @@ static std::optional<BorderStyle> ParseBorderStyle(const std::string& val) {
 
     return std::nullopt; // Not a valid border style token
 }
-#define CSS_DEBUG
+//#define CSS_DEBUG
 #ifdef CSS_DEBUG
   #define CSS_WARN(msg) do { std::cerr << "[CSS] " << msg << "\n"; } while(0)
 #else

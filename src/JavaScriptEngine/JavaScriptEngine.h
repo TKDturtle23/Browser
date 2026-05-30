@@ -15,11 +15,11 @@ public:
 JavaScriptEngine();
     ~JavaScriptEngine();
     void InjectData();
-    void Run(const std::string& script_data);
+    std::string Run(const std::string& script_data, const std::string &script_name);
 
     bool Step() const;
     void RunAll() const;
-    void Reset();
+
 
     JSContext *create_tab_context();
 

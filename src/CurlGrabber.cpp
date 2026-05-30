@@ -59,7 +59,12 @@ Grab CurlGrabber::GetData(std::string link, const std::map<std::string, std::str
     long status_code = 0;
 
     if (!curl) return {"", {}, 0};
+    // 1. Define a standard browser User-Agent identity string
+    // We include Chrome/Safari tokens because modern web servers expect them for compatibility
+    std::string user_agent = "EuclaseBrowser/1.0";
 
+    // 2. Pass the identity string directly to your active curl handle
+    curl_easy_setopt(curl, CURLOPT_USERAGENT, user_agent.c_str());
     curl_easy_setopt(curl, CURLOPT_URL, link.c_str());
 
     // Body callbacks
