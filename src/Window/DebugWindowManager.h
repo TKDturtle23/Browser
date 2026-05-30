@@ -8,6 +8,7 @@
 #include "UI/InterfaceManager.h"
 #include "Logger.h"
 #include "JavaScriptEngine/JavaScriptEngine.h"
+#include "CurlGrabber.h"
 // Forward declarations
 class Platform;
 struct Node;
@@ -24,17 +25,6 @@ struct DebugLogEntry {
     int           indent   = 0;
 };
 
-// ---------------------------------------------------------------------------
-// Network request entry
-// ---------------------------------------------------------------------------
-struct DebugNetEntry {
-    std::string method;       // "GET", "POST", ...
-    std::string url;
-    int         statusCode  = 0;   // 0 = pending/failed
-    std::string contentType;       // "text/html", "script", ...
-    int         sizeBytes   = 0;
-    int         timeMs      = 0;
-};
 
 // ---------------------------------------------------------------------------
 // DebugWindowManager

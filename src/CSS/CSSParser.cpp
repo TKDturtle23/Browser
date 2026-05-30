@@ -8,30 +8,28 @@
 
 // ── Selector parsing ────────────────────────────────────────────────────────
 
-CSSSelector CSSParser::ParseSelector(const std::string& raw) {
+// Change parameter to std::string_view
+CSSSelector CSSParser::ParseSelector(std::string_view s) {
     CSSSelector sel;
 
-    // strip pseudo-class (":link", ":visited", ":hover" etc)
-    std::string s = raw;
+    // strip pseudo-class without copying
     size_t colon = s.find(':');
-    if (colon != std::string::npos)
+    if (colon != std::string_view::npos)
         s = s.substr(0, colon);
 
-    // trim
+    // trim without copying
     size_t start = s.find_first_not_of(" \t\n\r");
-    size_t end   = s.find_last_not_of(" \t\n\r");
-    if (start == std::string::npos) return sel;
+    if (start == std::string_view::npos) return sel;
+    size_t end = s.find_last_not_of(" \t\n\r");
     s = s.substr(start, end - start + 1);
 
-    // parse tag, #id, .class in one pass
-    // e.g. "div.container", "#header", "a.active"
     size_t i = 0;
     while (i < s.size()) {
         if (s[i] == '#') {
             i++;
             size_t j = i;
             while (j < s.size() && s[j] != '.' && s[j] != '#') j++;
-            sel.id = s.substr(i, j - i);
+            sel.id = s.substr(i, j - i); // If sel.id must be std::string, it copies here, which is fine.
             i = j;
         } else if (s[i] == '.') {
             i++;
@@ -46,10 +44,21 @@ CSSSelector CSSParser::ParseSelector(const std::string& raw) {
             i = j;
         }
     }
-
     return sel;
 }
-
+// High-performance string_view splitter that doesn't allocate memory
+void SplitShorthand(std::string_view v, std::vector<std::string_view>& parts) {
+    size_t start = v.find_first_not_of(" \t");
+    while (start != std::string_view::npos) {
+        size_t end = v.find_first_of(" \t", start);
+        if (end == std::string_view::npos) {
+            parts.push_back(v.substr(start));
+            break;
+        }
+        parts.push_back(v.substr(start, end - start));
+        start = v.find_first_not_of(" \t", end);
+    }
+}
 // ── Rule parsing ─────────────────────────────────────────────────────────────
 
 std::vector<CSSRule> CSSParser::Parse(const std::string& css, bool isInlineStyle) {
@@ -129,13 +138,26 @@ bool CSSParser::Matches(const CSSSelector& sel, const Node& node) {
     if (!sel.cls.empty()) {
         auto it = node.attributes.find("class");
         if (it == node.attributes.end()) return false;
-        // class attribute can be space-separated — check each token
-        std::istringstream ss(it->second);
-        std::string token;
+
+        std::string_view class_attr = it->second;
+        size_t start = class_attr.find_first_not_of(" \t");
         bool found = false;
-        while (ss >> token) {
-            if (token == sel.cls) { found = true; break; }
+
+        while (start != std::string_view::npos) {
+            size_t end = class_attr.find_first_of(" \t", start);
+            std::string_view current_class = (end == std::string_view::npos)
+                ? class_attr.substr(start)
+                : class_attr.substr(start, end - start);
+
+            if (current_class == sel.cls) {
+                found = true;
+                break;
+            }
+
+            if (end == std::string_view::npos) break;
+            start = class_attr.find_first_not_of(" \t", end);
         }
+
         if (!found) return false;
     }
 
@@ -204,10 +226,13 @@ static std::optional<Color> ParseColor(const std::string& val) {
 
     // #rrggbb
     if (val[0] == '#' && val.size() == 7) {
-        auto hex2 = [&](size_t i) -> uint8_t {
-            return static_cast<uint8_t>(std::stoi(val.substr(i, 2), nullptr, 16));
+        auto hex2 = [](char high, char low) -> uint8_t {
+            auto h = (high >= 'a') ? (high - 'a' + 10) : ((high >= 'A') ? (high - 'A' + 10) : (high - '0'));
+            auto l = (low >= 'a') ? (low - 'a' + 10) : ((low >= 'A') ? (low - 'A' + 10) : (low - '0'));
+            return (h << 4) | l;
         };
-        return Color(hex2(5), hex2(3), hex2(1));
+        // Expecting #RRGGBB format
+        return Color(hex2(val[1], val[2]), hex2(val[3], val[4]), hex2(val[5], val[6]));
     }
 
     // Named colors

@@ -171,6 +171,7 @@ void WindowManager::UpdateUI() {
                                                      platform->GetHeight() - TOP_WIDTH);
                 // Feed new tab's DOM to the debug window
                 FeedDebugDOM();
+                CurlGrabber::ResetLog();
             }
         }
         ui_manager.SameLine();
@@ -186,7 +187,7 @@ void WindowManager::UpdateUI() {
         newTab.manager->Init();
         newTab.manager->Update();
         newTab.manager->StartScripts();
-
+        CurlGrabber::ResetLog();
         tabs.push_back(std::move(newTab));
         activeTabIndex = tabs.size() - 1;
     }
@@ -206,10 +207,12 @@ void WindowManager::UpdateUI() {
     ui_manager.SameLine();
 
     if (ui_manager.Button("R", 30, 28)) {
+        CurlGrabber::ResetLog();
         activeManager->SetLink(tabs[activeTabIndex].url);
         activeManager->Update();
         activeManager->StartScripts();
         FeedDebugDOM();   // DOM changed after reload
+
     }
     ui_manager.SameLine();
 
@@ -219,8 +222,8 @@ void WindowManager::UpdateUI() {
     std::string& activeUrl = tabs[activeTabIndex].url;
 
     if (ui_manager.AddressBar("URLInput", activeUrl, remainingWidth, 28)) {
-        std::cout << "Navigating Active Tab [" << activeTabIndex << "] to: "
-                  << activeUrl << std::endl;
+
+        CurlGrabber::ResetLog();
         activeManager->SetLink(activeUrl);
         activeManager->Update();
         FeedDebugDOM();   // New page, new DOM

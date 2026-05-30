@@ -267,7 +267,6 @@ Node Parser::Parse(const std::vector<Token>& tokens) {
     nodeStack.push(&root);
 
 for (const Token& token : tokens) {
-    std::cout << "Token: " << (int)token.type << " | Value: " << token.value << std::endl;
     switch (token.type) {
         case TokenType::Doctype: {
             auto node = std::make_unique<Node>();

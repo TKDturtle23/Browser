@@ -7,6 +7,7 @@
 // Your project's Platform factory and Node definition
 #include <source_location>
 
+#include "CurlGrabber.h"
 #include "Logger.h" // Updated include path matching your header guard
 #include "Platform/Platform.h"
 #include "Node.h"   // adjust path to wherever Node lives
@@ -263,8 +264,10 @@ ListRow DebugWindowManager::MakeNodeRow(const Node* node, int depth, bool &Child
         label += ">";
 
         if (node->children.size() == 1 && node->children[0]->type == NodeType::Text) {
-            label += node->children[0]->text;
-            ChildrenHandled = true;
+            if (node->children[0]->text.find('\n') == std::string::npos || node->children[0]->text.size() < 20) {
+                label += node->children[0]->text;
+                ChildrenHandled = true;
+            }
         } else if (node->children.size() > 1) {
             label += "...";
         }
@@ -562,6 +565,12 @@ bool DebugWindowManager::Render() {
         platform->needsRedraw = true;
     }
 
+    auto GrabLog = CurlGrabber::GetGrabLog();
+    std::vector<DebugNetEntry> netEntries;
+        for (auto log : GrabLog) {
+            netEntries.push_back(log.netDebug);
+        }
+    SetNetworkEntries(netEntries);
     // --- Event pump for the debug window ---
     Event event;
     while (platform->PollEvent(event)) {

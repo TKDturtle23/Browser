@@ -5,7 +5,7 @@
 #include <string>
 #include <map>
 #include <algorithm>
-
+#include <chrono>
 // Callback for the body
 static size_t WriteCallback(void* contents, size_t size, size_t nmemb, void* userp) {
     size_t totalSize = size * nmemb;
@@ -49,33 +49,24 @@ void CurlGrabber::Init() {
     curl_global_init(CURL_GLOBAL_DEFAULT);
     std::cout << curl_version() << std::endl;
 }
-
-// Assuming your Grab struct can hold headers now:
-// struct Grab { std::string body; std::map<std::string, std::string> headers; long status_code; };
 Grab CurlGrabber::GetData(std::string link, const std::map<std::string, std::string>& extraHeaders) {
     CURL* curl = curl_easy_init();
     std::string response_body;
     std::map<std::string, std::string> response_headers;
     long status_code = 0;
 
-    if (!curl) return {"", {}, 0};
-    // 1. Define a standard browser User-Agent identity string
-    // We include Chrome/Safari tokens because modern web servers expect them for compatibility
-    std::string user_agent = "EuclaseBrowser/1.0";
+    if (!curl) return {"", {}, 0, {}};
 
-    // 2. Pass the identity string directly to your active curl handle
+    std::string user_agent = "EuclaseBrowser/1.0";
     curl_easy_setopt(curl, CURLOPT_USERAGENT, user_agent.c_str());
     curl_easy_setopt(curl, CURLOPT_URL, link.c_str());
 
-    // Body callbacks
+    // Body & Header Callbacks setup
     curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, WriteCallback);
     curl_easy_setopt(curl, CURLOPT_WRITEDATA, &response_body);
-
-    // Header callbacks
     curl_easy_setopt(curl, CURLOPT_HEADERFUNCTION, HeaderCallback);
     curl_easy_setopt(curl, CURLOPT_HEADERDATA, &response_headers);
 
-    // Pass conditional validation headers if we are revalidating an expired cache entry
     struct curl_slist* chunk = nullptr;
     for (const auto& [key, val] : extraHeaders) {
         std::string header_line = key + ": " + val;
@@ -87,20 +78,68 @@ Grab CurlGrabber::GetData(std::string link, const std::map<std::string, std::str
 
     curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 1L);
 
+    // ─── START METRIC RECORDING ───
+    auto startTime = std::chrono::high_resolution_clock::now();
+
     CURLcode res = curl_easy_perform(curl);
+
+    auto endTime = std::chrono::high_resolution_clock::now();
+    int elapsedMs = std::chrono::duration_cast<std::chrono::milliseconds>(endTime - startTime).count();
+    // ─── END METRIC RECORDING ───
 
     if (res != CURLE_OK) {
         std::cerr << curl_easy_strerror(res) << std::endl;
         if (chunk) curl_slist_free_all(chunk);
         curl_easy_cleanup(curl);
-        return {"", {}, 0};
+
+        // Return an entry tracking the failure
+        DebugNetEntry failedEntry{"GET", link, 0, "unknown", 0, elapsedMs};
+        return {"", {}, 0, failedEntry};
     }
 
-    // Capture the HTTP status code (vital for 304 Not Modified checks)
     curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &status_code);
 
+    // ─── POPULATE DEBUGNETENTRY STRUCT ───
+    DebugNetEntry netEntry;
+    netEntry.method = "GET"; // Update dynamically if you implement POST routes later
+    netEntry.url = link;
+    netEntry.statusCode = static_cast<int>(status_code);
+    netEntry.timeMs = elapsedMs;
+
+    // Total size of the body payload gathered
+    netEntry.sizeBytes = static_cast<int>(response_body.size());
+
+    // Extract Content-Type safely from the map parsed by HeaderCallback
+    // Your callback forces keys to lowercase, making lookup reliable
+    if (response_headers.contains("content-type")) {
+        std::string rawContentType = response_headers["content-type"];
+
+        // Strip optional parameters like encoding (e.g., "text/html; charset=UTF-8")
+        size_t semiColonPos = rawContentType.find(';');
+        if (semiColonPos != std::string::npos) {
+            rawContentType = rawContentType.substr(0, semiColonPos);
+        }
+        netEntry.contentType = rawContentType;
+    } else {
+        netEntry.contentType = "unknown";
+    }
+
+    // Cleanup resources
     if (chunk) curl_slist_free_all(chunk);
     curl_easy_cleanup(curl);
 
-    return {response_body, response_headers, status_code};
+    // Package everything together
+    auto grab = Grab{response_body, response_headers, status_code, netEntry};
+    Grab_Log.push_back(grab);
+    return grab;
+}
+
+void CurlGrabber::ResetLog() {
+    Grab_Log.clear();
+}
+
+std::vector<Grab> CurlGrabber::Grab_Log;
+std::vector<Grab> CurlGrabber::GetGrabLog() {
+    return Grab_Log;
+
 }

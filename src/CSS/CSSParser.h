@@ -26,7 +26,7 @@ public:
     void Apply(const std::vector<CSSRule>& rules, Node& root, int viewportWidth, int viewportHeight);
 
 private:
-    CSSSelector ParseSelector(const std::string& raw);
+    static CSSSelector ParseSelector(std::string_view s) ;
     bool Matches(const CSSSelector& sel, const Node& node);
     void ApplyDeclarations(const std::vector<CSSDeclaration>& decls, Node& node,
                        int viewportWidth, int viewportHeight);
