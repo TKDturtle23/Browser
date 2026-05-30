@@ -20,8 +20,8 @@
 #include "../Layout/LayoutRenderer.h"
 
 #include "ImageViewer.h"
-#include "../../submodules/ImageLoader/src/ImageViewer.h"
 #include "Images/SvgViewer.h"
+#include "JavaScriptEngine/JavaScriptEngine.h"
 static std::string ConvertUrlToCachePath(const std::string& url) {
     std::string safeName = url;
     // Replace characters that are illegal or problematic in file systems
@@ -74,11 +74,16 @@ static std::string ResolveUrl(const std::string& baseUrl, const std::string& rel
 
     return protocol + "://" + host + dir + relUrl;
 }
-ViewportManager::ViewportManager(const int width, const int height) : renderer(width, height),
+ViewportManager::ViewportManager(const int width, const int height, JavaScriptEngine& engine) : renderer(width, height),
                                                                       layout(renderer),
                                                                       cache(
                                                                           std::filesystem::current_path().string() +
-                                                                          "/cache"), dom() {
+                                                                          "/cache"), dom(), engine(engine) {
+    tabContext = engine.create_tab_context();
+}
+
+ViewportManager::~ViewportManager() {
+    engine.destroy_tab_context(tabContext);
 }
 
 void ViewportManager::Init() {
@@ -117,7 +122,12 @@ void ViewportManager::SetLink(const std::string &Link) {
 void ViewportManager::Update() {
     if (LinkChanged) {
         LinkChanged = false;
+        if (tabContext) {
+            engine.destroy_tab_context(tabContext);
+            tabContext = engine.create_tab_context();
+        }
         Init();
+
     }
     if (UpdateNeeded) {
         UpdateNeeded = false;
@@ -129,7 +139,11 @@ void ViewportManager::Resize(int width, int height) {
     renderer.Resize(width, height);
     UpdateNeeded = true;
 }
-
+void ViewportManager::Step() {
+    // Tell the engine to target this specific tab's runtime context before pumping events
+    engine.set_active_context(tabContext);
+    engine.Step();
+}
 std::vector<Color> ViewportManager::Render() {
 
     layout.Render();
@@ -288,7 +302,32 @@ void ViewportManager::ApplyAndLayout() {
             discoverAndLoadImages(*child);
         }
     };
+    std::function<void(Node&)> discoverAndRunJavascript = [&](Node& node) {
+        if (node.type == NodeType::Element && node.tag == "script") {
+            auto srcIt = node.attributes.find("src");
+            if (srcIt != node.attributes.end()) {
+                std::string absoluteUrl = ResolveUrl(CurrentLink, srcIt->second);
+                std::string script = cache.GetResource(absoluteUrl);
+                node.code = script;
+            }
+            else {
+                // Case B: Embedded Inline Script <script>console.log("hi");</script>
+                std::string inlineScript = "";
+                for (auto& child : node.children) {
+                    if (child->type == NodeType::Text) {
+                        inlineScript += child->text;
+                    }
+                }
+                node.code = inlineScript;
+            }
+        }
+        for (auto& child : node.children) {
+            discoverAndRunJavascript(*child);
+        }
+    };
+
     discoverAndLoadImages(dom);
+    discoverAndRunJavascript(dom);
     layout.Update(dom);
 
 
@@ -296,8 +335,20 @@ void ViewportManager::ApplyAndLayout() {
 
 std::vector<Color> ViewportManager::OnRender(int width, int height) {
 
-
+    Step();
     Resize(width, height);
     Update();
     return Render();
+}
+void ViewportManager::RunNodeScripts(Node &node) {
+    if (!node.code.empty()) {
+        engine.Run(node.code);
+    }
+    for (auto &child : node.children) {
+        RunNodeScripts(*child);
+    }
+}
+void ViewportManager::StartScripts() {
+    engine.set_active_context(tabContext);
+RunNodeScripts(dom);
 }

@@ -16,7 +16,7 @@ struct TabState {
 
     std::string url;
     std::string title;
-
+    std::unique_ptr<ViewportManager> manager;
 };
 class WindowManager {
 public:
@@ -30,7 +30,7 @@ private:
     void UpdateUI();
     Renderer renderer;
     std::unique_ptr<Platform> platform;
-    ViewportManager manager;
+
     std::function<void()> OnRender;
     InterfaceManager ui_manager;
 
@@ -39,6 +39,7 @@ private:
 
     std::vector<TabState> tabs = {};
     size_t activeTabIndex = 0; // Tracks which tab is selected
+    JavaScriptEngine jsEngine;
 };
 
 

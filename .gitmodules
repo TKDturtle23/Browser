@@ -10,3 +10,6 @@
 [submodule "libwebp"]
 	path = submodules/libwebp
 	url = https://github.com/webmproject/libwebp.git
+[submodule "submodules/quickjs"]
+	path = submodules/quickjs
+	url = https://github.com/quickjs-ng/quickjs.git

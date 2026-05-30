@@ -1,0 +1,79 @@
+//
+// Created by tkdtu on 5/29/2026.
+//
+
+#ifndef BROWSER_QUICKJSENGINE_H
+#define BROWSER_QUICKJSENGINE_H
+#include <functional>
+#include <memory>
+#include <stdexcept>
+#include <string>
+#include <vector>
+
+#include "quickjs.h"
+
+// Custom exception class for handling JS runtime/compile errors elegantly
+class JavaScriptException : public std::runtime_error {
+public:
+    explicit JavaScriptException(const std::string& message) : std::runtime_error(message) {}
+};
+
+// Define a clean C++ type for our JavaScript arguments
+using JSArgs = std::vector<std::string>;
+// Define the signature for our C++ callbacks
+using JSCallback = std::function<std::string(const JSArgs&)>;
+struct CallbackData {
+    JSCallback callback;
+    JSContext* ctx;
+};
+class QuickjsEngine {
+public:
+    QuickjsEngine();
+    ~QuickjsEngine();
+
+
+    // Prevent copying to avoid accidental double-freeing of the JS runtime pointers
+    QuickjsEngine(const QuickjsEngine&) = delete;
+    QuickjsEngine& operator=(const QuickjsEngine&) = delete;
+    JSContext *create_tab_context();
+
+    void set_active_context(JSContext *ctx);
+
+    void destroy_tab_context(JSContext *ctx);
+
+    // Execute a raw string of JavaScript code. Returns the result as a std::string.
+    // Throws JavaScriptException if something goes wrong.
+    std::string execute(const std::string& script, const std::string& filename = "sandbox.js");
+
+    // Helper to inject a global string property (like browserInfo properties)
+    void inject_global_string(const std::string& object_name, const std::string& property_name, const std::string& value) const;
+
+    std::string js_value_to_string(JSValue value) const;
+
+    static CallbackData *get_callback_by_index(int index);
+
+    // New: Register a C++ callback function globally in JS
+    void register_function(const std::string& name, JSCallback callback);
+
+    // Internal trampoline structure to bridge C++ std::function with raw C pointers
+    void register_nested_function(const std::string& path, const JSCallback &callback);
+    void inject_nested_string(const std::string& path, const std::string& value) const;
+
+    // Processes any pending microtasks (Promises) or macrotasks (timers)
+    // Returns true if there is still more async work pending in the future
+    bool pump_event_loop() const;
+
+    // Fully executes the event loop until absolutely all async jobs are finished
+    void run_event_loop() const;
+    void reset();
+    std::vector<CallbackData*> m_allocated_callbacks; // For tracking and cleanup
+private:
+    JSValue resolve_or_create_path(const std::string& path, std::string& out_final_key) const;
+    struct Impl;
+    std::unique_ptr<Impl> impl;
+
+
+};
+
+
+#endif //BROWSER_QUICKJSENGINE_H

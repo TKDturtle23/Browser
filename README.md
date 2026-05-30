@@ -9,6 +9,4 @@ CSS support is limited, but growing.
 ## Building
 This uses CMake. to build, I would recommend using a CMake GUI in an IDE, but it builds normally. Make sure you initialize the submodules.
 
-This project uses Curl, Freetype, my custom image loader, libwebp, nanosvg, and later the v8 javascript engine.
-
-You will need to build and provide the v8 engine separetely, which I wish you luck with.
+This project uses Curl, Freetype, my custom image loader, libwebp, nanosvg, and QuickJS.

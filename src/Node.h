@@ -238,6 +238,7 @@ struct Node {
     NodeType type;
 
     std::string tag;
+    std::string code;
 
     std::string text;
 
