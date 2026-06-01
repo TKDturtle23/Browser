@@ -15,7 +15,7 @@ Font::Font(const std::string& path, int pixelSize) {
 Font::~Font() {
 }
 
-void Font::LoadGlyph(char c) {
+void Font::LoadGlyph(char c) const  {
 
     if (FT_Load_Char(face, c, FT_LOAD_RENDER | FT_LOAD_TARGET_NORMAL)) {
         return;
@@ -48,7 +48,7 @@ int Font::GetLineHeight() const {
     return (face->size->metrics.ascender - face->size->metrics.descender) >> 6;
 }
 
-FT_Vector Font::GetKerning(char c, char prev_char) {
+FT_Vector Font::GetKerning(char c, char prev_char) const {
     FT_Vector delta;
     delta.x = 0;
     delta.y = 0;
@@ -69,8 +69,7 @@ FT_Vector Font::GetKerning(char c, char prev_char) {
 
     return delta;
 }
-FontMetrics Font::GetMetrics()
-{
+FontMetrics Font::GetMetrics() const {
     FontMetrics m;
 
     m.ascent  = face->size->metrics.ascender >> 6;
@@ -81,7 +80,7 @@ FontMetrics Font::GetMetrics()
 
     return m;
 }
-const Glyph& Font::GetGlyph(char c) {
+const Glyph& Font::GetGlyph(char c) const {
 
     if (cache.find(c) == cache.end()) {
         LoadGlyph(c);

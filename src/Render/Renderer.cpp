@@ -24,10 +24,30 @@ void Renderer::Clear(Color color) {
 }
 
 void Renderer::DrawPixel(int x, int y, Color color) {
+    // 1. Bounds checking
     if (x < 0 || y < 0 || x >= width || y >= height)
         return;
 
-    backBuffer[y * width + x] = color;
+    // 2. Performance shortcuts
+    if (color.a <= 0) return;       // Fully transparent, nothing to draw
+    if (color.a >= 255) {           // Fully opaque, overwrite completely
+        backBuffer[y * width + x] = color;
+        return;
+    }
+
+    // 3. Get the background pixel we are drawing on top of
+    Color destColor = backBuffer[y * width + x];
+
+    // 4. Create a new color struct to hold the blended result
+    Color blendedColor;
+
+    // 5. Blend each channel using integer math (LERP)
+    blendedColor.r = ((color.r * color.a) + (destColor.r * (255 - color.a))) / 255;
+    blendedColor.g = ((color.g * color.a) + (destColor.g * (255 - color.a))) / 255;
+    blendedColor.b = ((color.b * color.a) + (destColor.b * (255 - color.a))) / 255;
+
+    // 6. Write the final blended pixel to the buffer
+    backBuffer[y * width + x] = blendedColor;
 }
 
 void Renderer::FillRect(int x, int y, int w, int h, Color color) {

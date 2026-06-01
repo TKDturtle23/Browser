@@ -14,6 +14,8 @@ enum class LengthUnit {
     Percent,
     Auto,
     Em,
+    Vw,
+    Vh,
     Inherit
 };
 
@@ -233,9 +235,24 @@ struct Style {
     StyleSetFlags set;
 
 };
+struct Rect {
+    int x, y;
+    int width, height;
+};
 
-
+struct RenderData {
+    Rect box;
+    int padding_top;
+    int padding_right;
+    int padding_bottom;
+    int padding_left;
+    int margin_top;
+    int margin_right;
+    int margin_bottom;
+    int margin_left;
+};
 struct Node {
+    RenderData renderData;
     NodeType type;
 
     std::string tag;

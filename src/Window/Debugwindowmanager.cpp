@@ -5,49 +5,62 @@
 #include <iomanip>
 
 // Your project's Platform factory and Node definition
+#include <ranges>
 #include <source_location>
 
 #include "CurlGrabber.h"
-#include "Logger.h" // Updated include path matching your header guard
+#include "../Debug/Logger.h"
 #include "Platform/Platform.h"
 #include "Node.h"   // adjust path to wherever Node lives
 
 // ---------------------------------------------------------------------------
-// Helpers
+// Helpers (Light Mode Palette)
 // ---------------------------------------------------------------------------
 
 static Color LevelBadgeBg(LogLevel lvl) {
     switch (lvl) {
-        case LogLevel::Fatal:   return {130, 10,  10 };   // Added for Fatal
-        case LogLevel::Error:   return {160, 40,  40 };
-        case LogLevel::Warning: return {160, 120, 20 };   // Fixed mapping name
-        case LogLevel::Info:    return {30,  90,  160};
-        case LogLevel::Debug:   return {100, 40,  160};   // Added for Debug
+        case LogLevel::Fatal:   return {255, 215, 215};   // Light Red
+        case LogLevel::Error:   return {255, 225, 225};   // Soft Red
+        case LogLevel::Warning: return {255, 243, 205};   // Soft Amber/Yellow
+        case LogLevel::Info:    return {207, 244, 252};   // Soft Light Blue
+        case LogLevel::Debug:   return {243, 230, 255};   // Soft Lavender/Purple
         case LogLevel::None:
         case LogLevel::Verbose:
-        default:                return {60,  62,  65 };
+        default:                return {240, 242, 245};   // Light Cool Gray
     }
 }
 
 static std::string LevelBadgeStr(LogLevel lvl) {
     switch (lvl) {
-        case LogLevel::Fatal:   return "FTL";             // Added for Fatal
+        case LogLevel::Fatal:   return "FTL";
         case LogLevel::Error:   return "ERR";
-        case LogLevel::Warning: return "WRN";             // Fixed mapping name
+        case LogLevel::Warning: return "WRN";
         case LogLevel::Info:    return "INF";
-        case LogLevel::Debug:   return "DBG";             // Added for Debug
+        case LogLevel::Debug:   return "DBG";
         case LogLevel::Verbose: return "VRB";
         case LogLevel::None:
         default:                return "LOG";
     }
 }
 
+// Consistent Dark Text for Light Mode Badges
+static Color LevelBadgeText(LogLevel lvl) {
+    switch (lvl) {
+        case LogLevel::Fatal:   return {130, 10,  10 };   // Dark Red
+        case LogLevel::Error:   return {160, 40,  40 };   // Dark Red
+        case LogLevel::Warning: return {133, 100, 4  };   // Dark Brown/Yellow
+        case LogLevel::Info:    return {11,  87,  208};   // Dark Blue
+        case LogLevel::Debug:   return {100, 40,  160};   // Dark Purple
+        default:                return {60,  62,  65 };   // Dark Gray
+    }
+}
+
 static Color LevelRowTint(LogLevel lvl) {
     switch (lvl) {
-        case LogLevel::Fatal:   return {90,  10, 10};     // Added for Fatal
-        case LogLevel::Error:   return {80,  20, 20};
-        case LogLevel::Warning: return {70,  55, 10};     // Fixed mapping name
-        default:                return {0,   0,  0 };
+        case LogLevel::Fatal:   return {255, 235, 235};   // Very faint red background
+        case LogLevel::Error:   return {255, 240, 240};   // Faint red background
+        case LogLevel::Warning: return {255, 250, 230};   // Faint yellow background
+        default:                return {255, 255, 255};   // Pure white fallback
     }
 }
 
@@ -61,11 +74,19 @@ static std::string StatusStr(int code) {
 }
 
 static Color StatusBadgeBg(int code) {
-    if (code == 0)          return {70,  70,  70 };   // pending
-    if (code >= 500)        return {160, 40,  40 };   // server error
-    if (code >= 400)        return {160, 80,  20 };   // client error
-    if (code >= 300)        return {100, 100, 20 };   // redirect
-    return {30, 110, 50};                             // 2xx ok
+    if (code == 0)          return {230, 230, 230};   // Pending (Neutral Light Gray)
+    if (code >= 500)        return {255, 225, 225};   // Server Error (Soft Red)
+    if (code >= 400)        return {255, 243, 205};   // Client Error (Soft Amber)
+    if (code >= 300)        return {230, 245, 230};   // Redirect (Faint Green)
+    return {212, 242, 218};                           // 2xx OK (Soft Green)
+}
+
+static Color StatusBadgeText(int code) {
+    if (code == 0)          return {80,  80,  80 };
+    if (code >= 500)        return {160, 40,  40 };
+    if (code >= 400)        return {133, 100, 4  };
+    if (code >= 300)        return {30,  90,  30 };
+    return {20,  100, 40 };
 }
 
 // ---------------------------------------------------------------------------
@@ -75,6 +96,9 @@ static Color StatusBadgeBg(int code) {
 DebugWindowManager::DebugWindowManager(int width, int height)
     : windowWidth(width), windowHeight(height)
 {
+minimize = ui->MakeImage("./Assets/Icons/minus.svg", 20, 20);
+maximize = ui->MakeImage("./Assets/Icons/maximize.svg", 20, 20);
+Return    = ui->MakeImage("./Assets/Icons/minimize.svg",    20, 20);
 }
 
 // ---------------------------------------------------------------------------
@@ -85,13 +109,13 @@ bool DebugWindowManager::Open() {
     if (isOpen) return true;
 
     platform = CreatePlatform();
-    if (!platform->OpenWindow(windowWidth, windowHeight, "DevTools")) {
+    if (!platform->OpenWindow(windowWidth, windowHeight, "DevTools", false)) {
         platform.reset();
         return false;
     }
     platform->SetMinimumSize(600, 380);
 
-    ui = std::make_unique<DebugInterfaceManager>(windowWidth, windowHeight);
+    ui = std::make_unique<UIManager>(windowWidth, windowHeight);
 
     // Mark all data dirty so first frame fully rebuilds everything
     consoleRowsDirty  = true;
@@ -152,7 +176,6 @@ void DebugWindowManager::SetNetworkEntries(const std::vector<DebugNetEntry>& ent
 void DebugWindowManager::RebuildConsoleRows() {
     consoleRows.clear();
     for (const auto& e : logEntries) {
-        // Filter by level toggles (Updated filter logic for new types)
         if (e.level == LogLevel::Verbose && !showLogs)   continue;
         if (e.level == LogLevel::Debug   && !showLogs)   continue;
         if (e.level == LogLevel::Info    && !showLogs)   continue;
@@ -160,7 +183,6 @@ void DebugWindowManager::RebuildConsoleRows() {
         if (e.level == LogLevel::Error   && !showErrors) continue;
         if (e.level == LogLevel::Fatal   && !showErrors) continue;
 
-        // Filter by text search
         if (!consoleFilter.empty()) {
             std::string lower = e.message;
             std::transform(lower.begin(), lower.end(), lower.begin(), ::tolower);
@@ -169,35 +191,37 @@ void DebugWindowManager::RebuildConsoleRows() {
             if (lower.find(filterLower) == std::string::npos) continue;
         }
 
-        ListRow row;
+        DebugListRow row;
         row.text        = e.message;
         row.annotation  = e.source;
         row.badgeLabel  = LevelBadgeStr(e.level);
         row.badgeColor  = LevelBadgeBg(e.level);
-        row.badgeText   = {220, 222, 225};
+        row.badgeText   = LevelBadgeText(e.level);
         row.rowTint     = LevelRowTint(e.level);
         row.hasTint     = LevelHasTint(e.level);
+        row.textColor   = {30, 30, 30}; // Dark text for list rows
         consoleRows.push_back(std::move(row));
     }
     consoleRowsDirty = false;
+
 }
 
 void DebugWindowManager::RebuildNetworkRows() {
     networkRows.clear();
     for (const auto& e : netEntries) {
-        ListRow row;
-        // Method badge
+        DebugListRow row;
+
         row.badgeLabel  = e.method.empty() ? "GET" : e.method;
-        row.badgeColor  = {45, 70, 110};
-        row.badgeText   = {180, 210, 255};
+        row.badgeColor  = {230, 240, 255}; // Faint light blue for methods
+        row.badgeText   = {30, 80, 180};    // High-contrast blue text
 
         row.text        = e.url;
         row.annotation  = StatusStr(e.statusCode);
-        row.badgeColor  = StatusBadgeBg(e.statusCode); // override with status colour
+        row.badgeColor  = StatusBadgeBg(e.statusCode);
         row.badgeLabel  = StatusStr(e.statusCode);
-        row.badgeText   = {220, 222, 225};
+        row.badgeText   = StatusBadgeText(e.statusCode);
+        row.textColor   = {30, 30, 30};
 
-        // Separate annotation: show content type + size
         std::string ann;
         if (!e.contentType.empty()) ann += e.contentType + "  ";
         if (e.sizeBytes > 0) {
@@ -209,107 +233,19 @@ void DebugWindowManager::RebuildNetworkRows() {
         if (e.timeMs > 0) ann += "  " + std::to_string(e.timeMs) + "ms";
         row.annotation = ann;
 
-        row.hasTint    = (e.statusCode >= 400 || e.statusCode == 0);
-        row.rowTint    = (e.statusCode >= 500) ? Color{80, 20, 20}
-                       : (e.statusCode >= 400) ? Color{80, 50, 10}
-                       :                         Color{0,  0,  0};
+        row.hasTint    = true;
+        row.rowTint    = (e.statusCode >= 500) ? Color{255, 235, 235}
+                       : (e.statusCode >= 400) ? Color{255, 250, 230}
+                       :                         Color{255, 255, 255};
         networkRows.push_back(std::move(row));
     }
     networkRowsDirty = false;
 }
 
-// ---------------------------------------------------------------------------
-// Inspector: DOM tree flattening
-// ---------------------------------------------------------------------------
-
-ListRow DebugWindowManager::MakeNodeRow(const Node* node, int depth, bool &ChildrenHandled) const {
-    ListRow row;
-
-    ChildrenHandled = false;
-    if (node->type == NodeType::Text) {
-        std::string txt = node->text;
-        // Collapse whitespace
-        auto start = txt.find_first_not_of(" \t\n\r");
-        if (start == std::string::npos) { row.text =  "(whitespace)"; }
-        else {
-            txt = txt.substr(start, 60);
-            row.text =  "\"" + txt + "\"";
-        }
-        row.badgeLabel = "TXT";
-        row.badgeColor = {50, 50, 55};
-        row.badgeText  = {140, 142, 145};
-        row.IndentLevel = depth;
-    } else if (node->type == NodeType::Comment) {
-        std::string comment = "<!--" + node->text + "-->";
-        row.text       = comment;
-        row.badgeLabel = "CMT";
-        row.badgeColor = {50, 50, 55};
-        row.badgeText  = {140, 142, 145};
-        row.IndentLevel = depth;
-        row.TextColor = {100, 200, 100};
-    } else if (node->type == NodeType::Doctype) {
-        std::string doc = "<!DOCTYPE " + node->tag + ">";
-        row.text       = doc;
-        row.badgeLabel = "DOC";
-        row.badgeColor = {50, 50, 55};
-    }
-    else {
-        // Build  <tag#id.class>
-        std::string label = "<" + node->tag;
-        for (const auto& attr : node->attributes) {
-            if (attr.first != "style") {
-                label += " " + attr.first + "=\"" + attr.second + "\"";
-            }
-        }
-        label += ">";
-
-        if (node->children.size() == 1 && node->children[0]->type == NodeType::Text) {
-            if (node->children[0]->text.find('\n') == std::string::npos || node->children[0]->text.size() < 20) {
-                label += node->children[0]->text;
-                ChildrenHandled = true;
-            }
-        } else if (node->children.size() > 1) {
-            label += "...";
-        }
-        label += "</" + node->tag + ">";
-        row.text       = label;
-        row.badgeLabel = node->tag.empty() ? "?" : node->tag.substr(0, 4);
-        row.badgeColor = {40, 60, 100};
-        row.badgeText  = {160, 200, 255};
-        row.IndentLevel = depth;
-        if (node->tag == "body") {
-            row.isCollapsed = false;
-        }
-    }
-
-    return row;
-}
-
-void DebugWindowManager::FlattenDOM(const Node* node, int depth, bool Root = false) {
-    if (!node) return;
-    if (Root) { // skip the root node
-
-
-        for (const auto& child : node->children) {
-            FlattenDOM(child.get(), 0, false);
-        }
-        return;
-    }
-    bool ChildrenHandled = false;
-    inspectorRows.push_back(MakeNodeRow(node, depth, ChildrenHandled));
-    inspectorNodes.push_back(node);
-    if (!ChildrenHandled) {
-        for (const auto& child : node->children) {
-            FlattenDOM(child.get(), depth + 1, false);
-        }
-    }
-
-}
 
 void DebugWindowManager::RebuildInspectorRows() {
     inspectorRows.clear();
     inspectorNodes.clear();
-    FlattenDOM(domRoot, 0, true);
     inspectorDirty = false;
 }
 
@@ -317,7 +253,6 @@ void DebugWindowManager::BuildStyleRows() {
     styleRows.clear();
     if (!selectedNode) return;
 
-    // --- Enum and Type Stringifiers ---
     auto DisplayStr = [](DisplayType d) -> std::string {
         switch(d) {
             case DisplayType::Block:       return "block";
@@ -362,25 +297,29 @@ void DebugWindowManager::BuildStyleRows() {
             case LengthUnit::Px:      return valStr + "px";
             case LengthUnit::Percent: return valStr + "%";
             case LengthUnit::Em:      return valStr + "em";
+            case LengthUnit::Vh:      return valStr + "vh";
+            case LengthUnit::Vw:      return valStr + "vw";
             default:                  return valStr;
         }
     };
 
     auto addRow = [&](const std::string& prop, const std::string& val) {
         if (val.empty() || val == "0" || val == "0px" || val == "none") return;
-        ListRow r;
+        DebugListRow r;
         r.text = prop + ": " + val;
+        r.textColor = {50, 50, 50};
         styleRows.push_back(r);
     };
 
     // --- Computed Styles Section ---
     const Style& cs = selectedNode->computedStyle;
 
-    ListRow header;
+    DebugListRow header;
     header.text       = "computed style";
     header.badgeLabel = "CSS";
-    header.badgeColor = {60, 30, 100};
-    header.badgeText  = {200, 170, 255};
+    header.badgeColor = {243, 230, 255}; // Faint Purple
+    header.badgeText  = {100, 40, 160};   // Dark Purple Text
+    header.textColor  = {30, 30, 30};
     styleRows.push_back(header);
 
     addRow("display",    DisplayStr(cs.display));
@@ -399,11 +338,12 @@ void DebugWindowManager::BuildStyleRows() {
     // --- Specified Styles Section ---
     const Style& ss = selectedNode->specifiedStyle;
 
-    ListRow specHeader;
+    DebugListRow specHeader;
     specHeader.text       = "specified style";
     specHeader.badgeLabel = "CSS";
-    specHeader.badgeColor = {30, 70, 60};
-    specHeader.badgeText  = {160, 220, 200};
+    specHeader.badgeColor = {210, 245, 240}; // Faint Teal
+    specHeader.badgeText  = {10, 100, 90};    // Dark Teal Text
+    specHeader.textColor  = {30, 30, 30};
     styleRows.push_back(specHeader);
 
     addRow("display",    DisplayStr(ss.display));
@@ -447,13 +387,12 @@ void DebugWindowManager::RenderConsoleTab(int px, int py, int pw, int ph) {
     ui->NewLine(4);
 
     ui->SetCursor(px + pw - 52, py + 4);
-    if (ui->Button("Clear", 48, 24)) {
+    if (ui->Button("Clear", 48, 24).activated) {
         ClearLogs();
         platform->needsRedraw = true;
     }
 
-    // --- Layout Math adjustments for JS input row ---
-    int jsInputH  = 32; // Height reserved for the bottom JS tray
+    int jsInputH  = 32;
     int listY     = py + TOOL_BAR_H;
     int listH     = ph - TOOL_BAR_H - jsInputH;
 
@@ -461,54 +400,77 @@ void DebugWindowManager::RenderConsoleTab(int px, int py, int pw, int ph) {
         platform->needsRedraw = true;
         RebuildConsoleRows();
         if (consoleAutoScroll) {
-            ui->ScrollListToBottom("console_list", consoleRows, listH, 22);
+            ui->ScrollListToBottom("console_list", consoleRows.size(), listH, 22);
         }
     }
 
-    // Render the log list with compressed height
     ui->SetCursor(px, listY);
-    (void)ui->ScrollableList("console_list", consoleRows, pw, listH, true, 22);
+    int SelectedItem = ui->GetListSelection("console_list");
+    if (ui->BeginListBox("console_list", pw, listH, true, 22)) {
 
-    // --- Bottom JS Console Bar ---
+        for (int i = 0; i < (int)consoleRows.size(); ++i) {
+            ui->PushID("Console_Tab_" + std::to_string(i));
+
+            auto rowStart = ui->GetCursor();
+
+            // background/selectable FIRST
+            bool clicked = ui->Selectable(
+                "Selector", "",
+                i == SelectedItem,
+                pw,
+                20,
+                Color(0,0,0,0)
+            );
+
+            // restore cursor for overlay content
+            ui->SetCursor(rowStart.x + 6, rowStart.y + 2);
+
+            ui->Text("Badge", consoleRows[i].badgeLabel);
+            ui->SameLine(10);
+            ui->Text("Text", consoleRows[i].text);
+
+            ui->SetCursor(px + pw - ui->MeasureText(consoleRows[i].annotation) - 10, rowStart.y + 2);
+            ui->PushStyleColor(UIColorVar::Text, Color(80,  80,  80,  255));
+            ui->Text("Annotation", consoleRows[i].annotation);
+
+            ui->NewLine();
+
+            ui->PopID();
+        }
+
+        ui->EndListBox();
+    }
+
     int jsY = py + ph - jsInputH + 4;
     ui->SetCursor(px + 4, jsY);
 
     int buttonW = 50;
     int inputW  = pw - buttonW - 16;
 
-    // Optional: Render a small label or prompt symbol
-    // ui->Label(">", 10, 24);
-
-    // Text field tracking code input
-    bool jsSubmitted = ui->TextField("js_input_bar", jsBuffer, inputW, 24);
+    WidgetResult jsSubmitted = ui->TextField("js_input_bar", jsBuffer, inputW, 24);
     ui->SameLine(8);
 
-    // Evaluate if user presses Enter inside the text field or clicks 'Run'
-    if (jsSubmitted || ui->Button("Run", buttonW, 24)) {
+    if (jsSubmitted || ui->Button("Run", buttonW, 24).activated) {
         if (!jsBuffer.empty()) {
             if (jsEngine) {
-                // Log the command visually in the console
                 Logger::Log("> " + jsBuffer, "Console Input", 0);
-
-                // Execute code via your registered engine interface
-                // (Adapt the exact evaluation method name to your JavaScriptEngine API)
                 auto result = jsEngine->Run(jsBuffer, "Console.js");
                 Logger::Log(result, "Console Output", 0);
+
             } else {
                 Logger::Log_Warning( "JS Engine not attached.", "Debugger", 0);
             }
 
-            jsBuffer.clear(); // Clear input bar after evaluation
+            jsBuffer.clear();
             consoleRowsDirty = true;
             platform->needsRedraw = true;
         }
     }
 }
-void DebugWindowManager::RenderNetworkTab(int px, int py, int pw, int ph) {
-    ui->SetCursor(px + 4, py + 4);
 
+void DebugWindowManager::RenderNetworkTab(int px, int py, int pw, int ph) {
     ui->SetCursor(px + pw - 52, py + 4);
-    if (ui->Button("Clear", 48, 24)) {
+    if (ui->Button("Clear", 48, 24).activated) {
         netEntries.clear();
         networkRows.clear();
         ui->ClearListSelection("net_list");
@@ -520,29 +482,191 @@ void DebugWindowManager::RenderNetworkTab(int px, int py, int pw, int ph) {
     int listH = ph - TOOL_BAR_H;
     ui->SetCursor(px, listY);
 
-    ui->ScrollableList("net_list", networkRows, pw, listH, false, 22);
+    int NetworkItem = ui->GetListSelection("net_list");
+    if (ui->BeginListBox("net_list", pw, listH, true, 22)) {
+        for (int i = 0; i < (int)networkRows.size(); ++i) {
+            ui->PushID("Net_Tab_" + std::to_string(i));
+            auto rowStart = ui->GetCursor();
+            ui->Selectable("badgeLabel", "",  i == NetworkItem, pw - 80, 20, networkRows[i].textColor);
+            // restore cursor for overlay content
+            ui->SetCursor(rowStart.x + 6, rowStart.y + 2);
+
+            ui->Text("Badge", networkRows[i].badgeLabel);
+            ui->SameLine(10);
+            ui->Text("Text", networkRows[i].text);
+
+            ui->NewLine();
+            ui->PopID();
+        }
+        ui->EndListBox();
+    }
+}
+static bool hasMultipleLines(const std::string& str) {
+    // Returns true if a newline character is found
+    return str.find('\n') != std::string::npos;
+}
+void DebugWindowManager::RenderInspectorTreeNode(const Node *node, int treeW) {
+    if (!node) return;
+    std::string name;
+    std::string EndTag = "";
+    bool RenderChildren = true;
+    switch (node->type) {
+        case (NodeType::Element): {
+            name += "<" + node->tag;
+            for (auto& attr : node->attributes) {
+                name += " " + attr.first + "=\"" + attr.second + "\"";
+            }
+            name += ">";
+            EndTag = "</" + node->tag + ">";
+            // check if Text child
+            if (node->children.size() == 1 && node->children[0]->type == NodeType::Text) {
+                if (hasMultipleLines(node->children[0]->text) || node->children[0]->text.size() > 10) {
+                    RenderChildren = true;
+                    if (!ui->IsTreeOpen("Node")) {
+                        name += "...";
+                        name += EndTag;
+                    }
+                } else {
+                    RenderChildren = false;
+                    name += node->children[0]->text;
+                    if (!ui->IsTreeOpen("Node")) {
+                        name += EndTag;
+                    }
+                }
+
+            }
+            break;
+        }
+        case (NodeType::Comment): {
+        name += "<!--" + node->text + "-->";
+        break;
+        }
+        case (NodeType::Doctype): {
+        name += "<!DOCTYPE " + node->text + ">";
+        break;
+        }
+        case (NodeType::Image): {
+            name += "<img />";
+        } break;
+        case NodeType::Document:
+            break;
+        case NodeType::Text:
+
+            break;
+    }
+    if (node->type == NodeType::Text) { // has to go first
+        auto split_view = node->text | std::views::split('\n');
+        int i = 0;
+        for (auto&& chunk : split_view) {
+            std::string_view line(chunk.begin(), chunk.end());
+            ui->Text("Text" + std::to_string(i), line.data());
+            i++;
+        }
+        return;
+    }
+    if (node->children.empty() || !RenderChildren) {
+        if (ui->Selectable("Node_sel", name, selectedNode == node, treeW - ui->GetCursor().x)) {
+            selectedNode = node;
+            redrawView = true;
+            platform->needsRedraw = true;
+            BuildStyleRows();
+        }
+        return;
+    }
+
+    bool clicked = false;
+    if (ui->TreeNode("Node", name, clicked, selectedNode == node, treeW)) {
+
+        for (int i = 0; i < (int)node->children.size(); ++i) {
+            auto& child = node->children[i];
+            ui->PushID(std::to_string(i));
+            RenderInspectorTreeNode(child.get(), treeW);
+            ui->PopID();
+
+        }
+
+        if (!EndTag.empty()) {
+            if (ui->Selectable("EndTag", EndTag, false, treeW)) {
+                selectedNode = node;
+                platform->needsRedraw = true;
+                redrawView = true;
+                BuildStyleRows();
+            }
+
+        }
+        ui->TreePop("Node");
+    }
+    if (clicked) {
+        selectedNode = node;
+        platform->needsRedraw = true;
+        redrawView = true;
+        BuildStyleRows();
+    }
 }
 
-void DebugWindowManager::RenderInspectorTab(int px, int py, int pw, int ph) {
-    if (inspectorDirty) RebuildInspectorRows();
+void DebugWindowManager::RenderInspectorTab(int px, int py, int pw, int ph)
+{
+    if (inspectorDirty)
+        RebuildInspectorRows();
 
     int treeW   = (pw * 6) / 10;
     int stylesW = pw - treeW;
     int listH   = ph;
 
+    // -------------------------------------------------
+    // DOM TREE
+    // -------------------------------------------------
     ui->SetCursor(px, py);
-    int clickedNode = ui->ScrollableList("dom_tree", inspectorRows, treeW, listH, false, 20);
-
-    if (clickedNode >= 0 && clickedNode < (int)inspectorNodes.size()) {
-        const Node* node = inspectorNodes[clickedNode];
-        if (node != selectedNode) {
-            selectedNode = node;
-            BuildStyleRows();
+    if (ui->BeginListBox("dom_tree", treeW, listH)) {
+        for (int i = 0; i < (int)domRoot->children.size(); ++i) {
+            ui->PushID(std::to_string(i));
+            RenderInspectorTreeNode(domRoot->children[i].get(), treeW);
+            ui->PopID();
         }
+    ui->EndListBox();
     }
 
+
+    // -------------------------------------------------
+    // STYLE PANE
+    // -------------------------------------------------
     ui->SetCursor(px + treeW, py);
-    ui->ScrollableList("style_pane", styleRows, stylesW, listH, false,20);
+
+    if (ui->BeginListBox("style_pane", stylesW, listH, false, 20)) {
+
+        for (int i = 0; i < (int)styleRows.size(); ++i) {
+
+            auto& row = styleRows[i];
+            auto Cursor = ui->GetCursor();
+            ui->SetCursor(Cursor.x + 4, Cursor.y + 4);
+            ui->BeginHorizontal(4);
+
+
+            if (!row.badgeLabel.empty()) {
+
+                ui->PushStyleColor(
+                    UIColorVar::ButtonNormal,
+                    row.badgeColor
+                );
+
+                ui->PushStyleColor(
+                    UIColorVar::ButtonText,
+                    row.badgeText
+                );
+
+                ui->Button(row.badgeLabel, 42, 18);
+
+                ui->PopStyleColor(2);
+            }
+
+            ui->Label(row.text, row.textColor);
+
+            ui->EndHorizontal();
+            ui->SetCursor(Cursor.x, ui->GetCursor().y);
+        }
+
+        ui->EndListBox();
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -552,26 +676,23 @@ void DebugWindowManager::RenderInspectorTab(int px, int py, int pw, int ph) {
 bool DebugWindowManager::Render() {
     if (!isOpen || !platform || !ui) return false;
 
-    // Assuming you have access to a Logger instance parameter or pointer
-    // If you plan to use a global object, exchange `loggerInstance.` with your pointer name.
     while (true) {
         auto log = Logger::GetNextLog();
         if (!log.has_value()) {
             break;
         }
         auto data = log.value();
-        // Passing "" as source because the new LogEntry layout doesn't track a source parameter natively
         PushLog(data.level, data.msg, data.source, data.Indent);
         platform->needsRedraw = true;
     }
 
     auto GrabLog = CurlGrabber::GetGrabLog();
     std::vector<DebugNetEntry> netEntries;
-        for (auto log : GrabLog) {
-            netEntries.push_back(log.netDebug);
-        }
+    for (auto log : GrabLog) {
+        netEntries.push_back(log.netDebug);
+    }
     SetNetworkEntries(netEntries);
-    // --- Event pump for the debug window ---
+
     Event event;
     while (platform->PollEvent(event)) {
         if (event.type == EventType::Resize) {
@@ -582,6 +703,10 @@ bool DebugWindowManager::Render() {
         }
         else if (event.type == EventType::KeyPress) {
             if (event.key == Key::LShift || event.key == Key::RShift) shiftHeld = true;
+            if (event.key == Key::F12) {
+                NeedsClose = true;
+                return false;
+            }
             ui->InjectKeyChar(event.key, shiftHeld);
             platform->needsRedraw = true;
         }
@@ -605,7 +730,7 @@ bool DebugWindowManager::Render() {
             platform->needsRedraw = true;
         }
         else if (event.type == EventType::Quit) {
-            Close();
+            NeedsClose = true;
             return false;
         }
     }
@@ -618,7 +743,6 @@ bool DebugWindowManager::Render() {
     if (!platform->needsRedraw) return true;
     platform->needsRedraw = false;
 
-    // --- Build frame ---
     ui->BeginFrame();
 
     const int W = windowWidth;
@@ -635,6 +759,25 @@ bool DebugWindowManager::Render() {
         ui->SameLine(2);
     }
 
+    auto emptySpace = ui->GetCursor();
+    int windowWidth = platform->GetWidth();
+    auto saved = ui->GetCursor();
+
+    ui->SetCursor(windowWidth - 65, saved.y);
+
+    if (ui->SvgButton("minimize", minimize,28, 28).activated) {
+        platform->MinimizeWindow();
+    }
+    ui->SameLine(0);
+
+    if (ui->SvgButton("minmax", platform->Is_WindowZoomed() ? Return : maximize,28, 28).activated) {
+        platform->MaximizeOrRestoreWindow();
+    }
+    ui->SameLine(0);
+
+    ui->SetCursor(saved.x, saved.y);
+    platform->SetTopBarHeight({emptySpace.x, 0, platform->GetWidth() - emptySpace.x - 89, 28});
+
     // === Content area below tab bar ===
     int contentY = TAB_BAR_H + 4;
     int contentH = H - contentY;
@@ -646,7 +789,21 @@ bool DebugWindowManager::Render() {
     }
 
     ui->EndFrame();
-
     platform->Present(ui->GetFrontBuffer());
     return true;
+}
+
+const Node *DebugWindowManager::GetSelectedNode() {
+    if (activeTab == 2) {
+        return selectedNode;
+    }
+    return nullptr;
+}
+
+bool DebugWindowManager::Redraw() {
+    if (redrawView) {
+        redrawView = false;
+        return true;
+    }
+    return false;
 }

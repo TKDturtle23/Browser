@@ -1,72 +1,169 @@
 #include "InterfaceManager.h"
-
 #include <algorithm>
+#include <chrono>
 #include <cstring>
-#include <iostream>
+#include <fstream>
+#include <numeric>
+#include <sstream>
 
-#include "Platform/Platform.h"
+#include "Render/Renderer.h"
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+namespace {
+    // FNV-1a hash of an arbitrary string
+    constexpr uint32_t fnv1a(const char* s, uint32_t hash = 2166136261U) {
+        return (*s == '\0') ? hash : fnv1a(s + 1, (hash ^ (uint8_t)*s) * 16777619U);
+    }
+    uint32_t fnv1a(const std::string& s) {
+        uint32_t h = 2166136261U;
+        for (char c : s) { h ^= (uint8_t)c; h *= 16777619U; }
+        return h;
+    }
+
+    double NowMs() {
+        using namespace std::chrono;
+        return (double)duration_cast<milliseconds>(steady_clock::now().time_since_epoch()).count();
+    }
+}
 
 // ---------------------------------------------------------------------------
 // Construction / resize
 // ---------------------------------------------------------------------------
 
-DebugInterfaceManager::DebugInterfaceManager(int initialWidth, int initialHeight)
-    : windowWidth(initialWidth), windowHeight(initialHeight),
+UIManager::UIManager(int w, int h)
+    : windowWidth(w), windowHeight(h),
       font("arial/ARIAL.TTF", 14)
 {
-    renderer = std::make_unique<Renderer>(windowWidth, windowHeight);
+    renderer = std::make_unique<Renderer>(w, h);
+
+    // Push a root layout context
+    LayoutContext root;
+    root.originX = root.cursorX = 0;
+    root.originY = root.cursorY = 0;
+    root.contentW = w;
+    root.contentH = h;
+    layoutStack.push_back(root);
+}
+UIManager::~UIManager() = default;
+void UIManager::Resize(int w, int h) {
+    windowWidth  = w;
+    windowHeight = h;
+    renderer->Resize(w, h);
+    if (!layoutStack.empty()) {
+        layoutStack.front().contentW = w;
+        layoutStack.front().contentH = h;
+    }
 }
 
-void DebugInterfaceManager::Resize(int newWidth, int newHeight) {
-    windowWidth  = newWidth;
-    windowHeight = newHeight;
-    renderer->Resize(newWidth, newHeight);
-}
-
-const std::vector<Color>& DebugInterfaceManager::GetFrontBuffer() const {
+const std::vector<Color>& UIManager::GetFrontBuffer() const {
     return renderer->GetFrontBuffer();
+}
+
+// ---------------------------------------------------------------------------
+// Style  — push / pop color overrides
+// ---------------------------------------------------------------------------
+
+Color* UIManager::StyleColor(UIColorVar var) {
+    auto& c = style.Colors;
+    switch (var) {
+        case UIColorVar::WindowBg:         return &c.WindowBg;
+        case UIColorVar::WindowBorder:     return &c.WindowBorder;
+        case UIColorVar::Text:             return &c.Text;
+        case UIColorVar::TextDisabled:     return &c.TextDisabled;
+        case UIColorVar::ButtonNormal:     return &c.ButtonNormal;
+        case UIColorVar::ButtonHover:      return &c.ButtonHover;
+        case UIColorVar::ButtonActive:     return &c.ButtonActive;
+        case UIColorVar::ButtonText:       return &c.ButtonText;
+        case UIColorVar::InputBg:          return &c.InputBg;
+        case UIColorVar::InputBorderIdle:  return &c.InputBorderIdle;
+        case UIColorVar::InputBorderFocus: return &c.InputBorderFocus;
+        case UIColorVar::InputText:        return &c.InputText;
+        case UIColorVar::InputSelection:   return &c.InputSelection;
+        case UIColorVar::InputSelText:     return &c.InputSelText;
+        case UIColorVar::InputCursor:      return &c.InputCursor;
+        case UIColorVar::CheckboxIdle:     return &c.CheckboxIdle;
+        case UIColorVar::CheckboxChecked:  return &c.CheckboxChecked;
+        case UIColorVar::CheckboxMark:     return &c.CheckboxMark;
+        case UIColorVar::TabIdle:          return &c.TabIdle;
+        case UIColorVar::TabHover:         return &c.TabHover;
+        case UIColorVar::TabActive:        return &c.TabActive;
+        case UIColorVar::TabAccent:        return &c.TabAccent;
+        case UIColorVar::TabText:          return &c.TabText;
+        case UIColorVar::ListBg:           return &c.ListBg;
+        case UIColorVar::ListRowEven:      return &c.ListRowEven;
+        case UIColorVar::ListRowOdd:       return &c.ListRowOdd;
+        case UIColorVar::ListRowHover:     return &c.ListRowHover;
+        case UIColorVar::ListRowSelected:  return &c.ListRowSelected;
+        case UIColorVar::ListBorder:       return &c.ListBorder;
+        case UIColorVar::ListScrollTrack:  return &c.ListScrollTrack;
+        case UIColorVar::ListScrollThumb:  return &c.ListScrollThumb;
+        case UIColorVar::ListArrow:        return &c.ListArrow;
+        case UIColorVar::Separator:        return &c.Separator;
+        default:                           return nullptr;
+    }
+}
+
+void UIManager::PushStyleColor(UIColorVar var, Color color) {
+    Color* ptr = StyleColor(var);
+    if (!ptr) return;
+    styleColorStack.push_back({var, *ptr});
+    *ptr = color;
+}
+
+void UIManager::PopStyleColor(int count) {
+    for (int i = 0; i < count && !styleColorStack.empty(); ++i) {
+        auto& e = styleColorStack.back();
+        Color* ptr = StyleColor(e.var);
+        if (ptr) *ptr = e.previous;
+        styleColorStack.pop_back();
+    }
+}
+
+void UIManager::FillRectRound(int x, int y, int w, int h, int r, Color c, uint8_t corners) const {
+    renderer->FillRectBeveled(x, y, w, h, r, c); // bevel all corners first
+
+    // Overdraw any corners that should be square
+    if (!(corners & Corner_TopLeft))     renderer->FillRect(x,         y,         r, r, c);
+    if (!(corners & Corner_TopRight))    renderer->FillRect(x + w - r, y,         r, r, c);
+    if (!(corners & Corner_BottomLeft))  renderer->FillRect(x,         y + h - r, r, r, c);
+    if (!(corners & Corner_BottomRight)) renderer->FillRect(x + w - r, y + h - r, r, r, c);
 }
 
 // ---------------------------------------------------------------------------
 // Input injection
 // ---------------------------------------------------------------------------
 
-void DebugInterfaceManager::InjectMouseMove(int x, int y) {
-    io.mouseX = x;
-    io.mouseY = y;
+void UIManager::InjectMouseMove(int x, int y) {
+    io.mouseX = x; io.mouseY = y;
 }
-
-void DebugInterfaceManager::InjectMouseButton(bool leftDown) {
+void UIManager::InjectMouseButton(bool leftDown) {
     io.mouseLeftDown = leftDown;
 }
-
-void DebugInterfaceManager::InjectMouseWheel(int delta) {
+void UIManager::InjectMouseWheel(int delta) {
     io.mouseWheelDelta = delta;
 }
 
-void DebugInterfaceManager::InjectKeyChar(Key key, bool shiftPressed) {
+void UIManager::InjectKeyChar(Key key, bool shift) {
     io.backspacePressed = (key == Key::Backspace);
     io.enterPressed     = (key == Key::Return || key == Key::NumpadEnter);
 
     char c = '\0';
-
     if (key >= Key::A && key <= Key::Z) {
-        int offset = static_cast<int>(key) - static_cast<int>(Key::A);
-        c = shiftPressed ? ('A' + offset) : ('a' + offset);
-    }
-    else if (key >= Key::Num0 && key <= Key::Num9) {
-        int offset = static_cast<int>(key) - static_cast<int>(Key::Num0);
-        if (shiftPressed) {
-            const char shiftNums[] = { ')', '!', '@', '#', '$', '%', '^', '&', '*', '(' };
-            c = shiftNums[offset];
+        int off = static_cast<int>(key) - static_cast<int>(Key::A);
+        c = shift ? ('A' + off) : ('a' + off);
+    } else if (key >= Key::Num0 && key <= Key::Num9) {
+        int off = static_cast<int>(key) - static_cast<int>(Key::Num0);
+        if (shift) {
+            const char shiftNums[] = {')', '!', '@', '#', '$', '%', '^', '&', '*', '('};
+            c = shiftNums[off];
         } else {
-            c = '0' + offset;
+            c = '0' + off;
         }
-    }
-    else if (key >= Key::Numpad0 && key <= Key::Numpad9) {
+    } else if (key >= Key::Numpad0 && key <= Key::Numpad9) {
         c = '0' + (static_cast<int>(key) - static_cast<int>(Key::Numpad0));
-    }
-    else {
+    } else {
         switch (key) {
             case Key::Space:          c = ' ';                       break;
             case Key::NumpadDivide:   c = '/';                       break;
@@ -74,21 +171,20 @@ void DebugInterfaceManager::InjectKeyChar(Key key, bool shiftPressed) {
             case Key::NumpadSubtract: c = '-';                       break;
             case Key::NumpadAdd:      c = '+';                       break;
             case Key::NumpadDecimal:  c = '.';                       break;
-            case Key::Semicolon:      c = shiftPressed ? ':' : ';';  break;
-            case Key::Slash:          c = shiftPressed ? '?' : '/';  break;
-            case Key::Equal:          c = shiftPressed ? '+' : '=';  break;
-            case Key::Hyphen:         c = shiftPressed ? '_' : '-';  break;
-            case Key::LBracket:       c = shiftPressed ? '{' : '[';  break;
-            case Key::RBracket:       c = shiftPressed ? '}' : ']';  break;
-            case Key::Comma:          c = shiftPressed ? '<' : ',';  break;
-            case Key::Period:         c = shiftPressed ? '>' : '.';  break;
-            case Key::Quote:          c = shiftPressed ? '"' : '\''; break;
-            case Key::Backquote:      c = shiftPressed ? '~' : '`';  break;
-            case Key::Backslash:      c = shiftPressed ? '|' : '\\'; break;
+            case Key::Semicolon:      c = shift ? ':' : ';';         break;
+            case Key::Slash:          c = shift ? '?' : '/';         break;
+            case Key::Equal:          c = shift ? '+' : '=';         break;
+            case Key::Hyphen:         c = shift ? '_' : '-';         break;
+            case Key::LBracket:       c = shift ? '{' : '[';         break;
+            case Key::RBracket:       c = shift ? '}' : ']';         break;
+            case Key::Comma:          c = shift ? '<' : ',';         break;
+            case Key::Period:         c = shift ? '>' : '.';         break;
+            case Key::Quote:          c = shift ? '"' : '\'';        break;
+            case Key::Backquote:      c = shift ? '~' : '`';         break;
+            case Key::Backslash:      c = shift ? '|' : '\\';        break;
             default:                  c = '\0';                      break;
         }
     }
-
     io.lastTypedChar = c;
 }
 
@@ -96,42 +192,74 @@ void DebugInterfaceManager::InjectKeyChar(Key key, bool shiftPressed) {
 // Frame lifecycle
 // ---------------------------------------------------------------------------
 
-void DebugInterfaceManager::BeginFrame() {
+void UIManager::BeginFrame() {
     io.mouseLeftClicked = (io.mouseLeftDown && !lastMouseState);
     lastMouseState      = io.mouseLeftDown;
 
-    renderer->Clear(Color{25, 25, 28});   // Dark panel background
+    renderer->Clear(style.Colors.WindowBg);
 
-    cursorX      = 5;
-    cursorY      = 5;
-    maxRowHeight = 0;
-    hotID        = 0;
+    hotID              = UI_ID_NONE;
+    mouseOverAnyWidget = false;
 
-    // Wheel delta is consumed once per frame
+    // Reset root layout cursor
+    auto& root = layoutStack.front();
+    root.cursorX = root.originX;
+    root.cursorY = root.originY;
+    root.maxRowH = 0;
+    root.maxColW = 0;
 }
 
-void DebugInterfaceManager::EndFrame() {
-    if (!io.mouseLeftDown) {
-        activeID = 0;
-    }
+void UIManager::EndFrame() {
+    if (!io.mouseLeftDown) activeID = UI_ID_NONE;
 
-    io.lastTypedChar    = 0;
+    io.lastTypedChar    = '\0';
     io.backspacePressed = false;
     io.enterPressed     = false;
     io.mouseWheelDelta  = 0;
+    redrawNeeded        = false;
 
     renderer->Present();
+}
+
+// ---------------------------------------------------------------------------
+// ID stack
+// ---------------------------------------------------------------------------
+
+void UIManager::PushID(const std::string& id) { idStack.push_back(id); }
+void UIManager::PushID(int id)                 { idStack.push_back(std::to_string(id)); }
+void UIManager::PopID()  { if (!idStack.empty()) idStack.pop_back(); }
+
+void UIManager::AdvanceCursorX(const int x) {
+    auto& lc = Layout();
+    lc.cursorX += x;
+    if (lc.cursorX > lc.contentW) lc.cursorX = lc.contentW;
+}
+
+void UIManager::AdvanceCursorY(int y) {
+    auto& lc = Layout();
+    lc.cursorY += y;
+    if (lc.cursorY > lc.contentH) lc.cursorY = lc.contentH;
+}
+
+UIID UIManager::GetID(const std::string& str) const {
+    return fnv1a(str);
+}
+
+UIID UIManager::GetScopedID(const std::string& str) const {
+    // Combine current ID stack into a single seed string
+    std::string seed;
+    for (auto& s : idStack) { seed += s; seed += '/'; }
+    seed += str;
+    return fnv1a(seed);
 }
 
 // ---------------------------------------------------------------------------
 // Clip rect stack
 // ---------------------------------------------------------------------------
 
-void DebugInterfaceManager::PushClipRect(int x, int y, int w, int h) {
+void UIManager::PushClipRect(int x, int y, int w, int h) {
     ClipRect incoming{x, y, w, h, true};
-
     if (!clipStack.empty() && clipStack.back().active) {
-        // Intersect with the current top
         const ClipRect& cur = clipStack.back();
         int x2 = std::min(cur.x + cur.w, incoming.x + incoming.w);
         int y2 = std::min(cur.y + cur.h, incoming.y + incoming.h);
@@ -140,728 +268,1117 @@ void DebugInterfaceManager::PushClipRect(int x, int y, int w, int h) {
         incoming.w = std::max(0, x2 - incoming.x);
         incoming.h = std::max(0, y2 - incoming.y);
     }
-
     clipStack.push_back(incoming);
     activeClip = clipStack.back();
 }
 
-void DebugInterfaceManager::PopClipRect() {
+void UIManager::PopClipRect() {
     if (!clipStack.empty()) clipStack.pop_back();
     activeClip = clipStack.empty() ? ClipRect{} : clipStack.back();
+}
+
+bool UIManager::IsInsideClip(int x, int y, int w, int h) const {
+    if (!activeClip.active) return true;
+    return !(x + w <= activeClip.x || y + h <= activeClip.y ||
+             x     >= activeClip.x + activeClip.w ||
+             y     >= activeClip.y + activeClip.h);
 }
 
 // ---------------------------------------------------------------------------
 // Layout helpers
 // ---------------------------------------------------------------------------
 
-void DebugInterfaceManager::SameLine(int spacing) {
-    cursorX += spacing;
-}
-
-void DebugInterfaceManager::NewLine(int spacing) {
-    cursorX      = 5;
-    cursorY     += maxRowHeight + spacing;
-    maxRowHeight = 0;
-}
-
-void DebugInterfaceManager::SetCursor(int x, int y) {
-    cursorX = x;
-    cursorY = y;
-}
-
-// ---------------------------------------------------------------------------
-// Internal helpers
-// ---------------------------------------------------------------------------
-
-UIID DebugInterfaceManager::GetID(const std::string& str) const {
-    uint32_t hash = 2166136261U;
-    for (char c : str) {
-        hash ^= static_cast<uint32_t>(c);
-        hash *= 16777619U;
+void UIManager::AdvanceCursor(int w, int h) {
+    auto& lc = Layout();
+    if (lc.dir == LayoutDir::Horizontal) {
+        lc.cursorX += w + style.Vars.ItemSpacingX;
+        if (h > lc.maxRowH) lc.maxRowH = h;
+    } else {
+        lc.lastAdvanceY = lc.cursorY;
+        lc.lastAdvanceH = h;
+        lc.lastAdvanceW = w;
+        lc.cursorY += h + style.Vars.ItemSpacingY;
+        lc.cursorX  = lc.originX;
+        if (w > lc.maxColW) lc.maxColW = w;
     }
-    return hash;
 }
 
-bool DebugInterfaceManager::IsMouseOver(int x, int y, int w, int h) const {
+void UIManager::SameLine(int spacing) {
+    auto& lc = Layout();
+    if (spacing < 0) spacing = style.Vars.ItemSpacingX;
+
+    if (lc.dir == LayoutDir::Vertical) {
+        lc.cursorY  = lc.lastAdvanceY;
+        lc.cursorX  = lc.originX + lc.lastAdvanceW + spacing;
+        if (lc.lastAdvanceH > lc.maxRowH) lc.maxRowH = lc.lastAdvanceH;
+    } else {
+        lc.cursorX += spacing;
+    }
+
+    lc.dir = LayoutDir::Horizontal;
+}
+
+void UIManager::NewLine(int spacing) {
+    auto& lc = Layout();
+    if (spacing < 0) spacing = style.Vars.ItemSpacingY;
+    lc.cursorX  = lc.originX;
+    lc.cursorY += lc.maxRowH + spacing;
+    lc.maxRowH  = 0;
+    lc.dir      = LayoutDir::Vertical;
+}
+
+void UIManager::SetCursor(int x, int y) {
+    auto& lc = Layout();
+    lc.cursorX = x;
+    lc.cursorY = y;
+    lc.dir     = LayoutDir::Horizontal;  // add this
+    // don't reset maxRowH here — let it accumulate
+}
+// .cpp
+void UIManager::SetRowHeight(int h) {
+    if (h > Layout().maxRowH) Layout().maxRowH = h;
+}
+#include "Images/SvgViewer.h"
+UI_Image UIManager::MakeImage(const std::string &svg, int width, int height) {
+    // Load img
+std::ifstream in(svg, std::ios::in | std::ios::binary | std::ios::ate);
+if (!in) return UI_Image{};
+
+std::streamsize size = in.tellg();
+in.seekg(0, std::ios::beg);
+
+std::string content;
+content.resize(size);
+
+if (!in.read(&content[0], size)) {
+    return UI_Image{};
+}
+    std::vector<uint8_t> data(content.begin(), content.end());
+    // make img
+if (SvgViewer::IsSvg(data)) {
+SvgViewer viewer;
+    int channels; // always 4
+    auto raw = viewer.GetPixels(data, width, height, channels);
+    UI_Image img;
+    img.width = width;
+    img.height = height;
+    img.svg = svg;
+    for (size_t i = 0; i < raw.size(); i += 4) {
+        if (i + 3 < raw.size()) {
+            Color pixel;
+
+                pixel.r = raw[i];     // Byte 0
+                pixel.g = raw[i + 1]; // Byte 1
+                pixel.b = raw[i + 2]; // Byte 2
+                pixel.a = raw[i + 3]; // Byte 3
+
+            img.img.push_back(pixel);
+        }
+    }
+    return img;
+
+}
+return UI_Image{};
+}
+
+Vec2 UIManager::GetCursor() const {
+    return {layoutStack.back().cursorX, layoutStack.back().cursorY};
+}
+
+void UIManager::Indent(int width) {
+    Layout().originX  += width;
+    Layout().cursorX  += width;
+}
+
+void UIManager::Unindent(int width) {
+    Layout().originX  -= width;
+    Layout().cursorX  -= width;
+}
+
+// ---------------------------------------------------------------------------
+// Group
+// ---------------------------------------------------------------------------
+
+void UIManager::BeginGroup() {
+    auto& lc = Layout();
+    groupStack.push_back({{lc.cursorX, lc.cursorY, 0, 0}, (int)layoutStack.size()});
+}
+
+Rect UIManager::EndGroup() {
+    if (groupStack.empty()) return {};
+    auto gs = groupStack.back();
+    groupStack.pop_back();
+    auto& lc = Layout();
+    Rect r;
+    r.x = gs.bounds.x;
+    r.y = gs.bounds.y;
+    r.width = lc.cursorX - gs.bounds.x;
+    r.height = lc.cursorY - gs.bounds.y + lc.maxRowH;
+    return r;
+}
+
+// ---------------------------------------------------------------------------
+// Horizontal layout scope
+// ---------------------------------------------------------------------------
+
+void UIManager::BeginHorizontal(int spacing) {
+    // Push a copy of the current layout context, set to horizontal
+    LayoutContext lc = Layout();
+    lc.dir = LayoutDir::Horizontal;
+    if (spacing >= 0) lc.originX = lc.cursorX; // respect custom spacing
+    layoutStack.push_back(lc);
+}
+
+void UIManager::EndHorizontal() {
+    if (layoutStack.size() <= 1) return;
+    // Merge tallest row height back into parent
+    int rowH = layoutStack.back().maxRowH;
+    int endX  = layoutStack.back().cursorX;
+    layoutStack.pop_back();
+    auto& parent = Layout();
+    if (rowH > parent.maxRowH) parent.maxRowH = rowH;
+    parent.cursorX = endX;
+    parent.cursorY += rowH + style.Vars.ItemSpacingY;
+    parent.maxRowH = 0;
+}
+
+// ---------------------------------------------------------------------------
+// Window / panel
+// ---------------------------------------------------------------------------
+
+int UIManager::BeginWindow(const std::string& id, Rect rect,
+                           Color bg, int paddingX, int paddingY,
+                           bool hasBorder, bool scrollable)
+{
+    UIWindow win;
+    win.id        = id;
+    win.rect      = rect;
+    win.bg        = bg;
+    win.paddingX  = paddingX;
+    win.paddingY  = paddingY;
+    win.hasBorder = hasBorder;
+    win.scrollable= scrollable;
+
+    renderer->FillRect(rect.x, rect.y, rect.width, rect.height, bg);
+    if (hasBorder)
+        renderer->DrawRect(rect.x, rect.y, rect.width, rect.height, style.Colors.WindowBorder);
+
+    PushClipRect(rect.x + paddingX, rect.y + paddingY,
+                 rect.width - paddingX * 2, rect.height - paddingY * 2);
+
+    // Push a fresh layout context for this window
+    LayoutContext lc;
+    lc.originX = lc.cursorX = rect.x + paddingX;
+    lc.originY = lc.cursorY = rect.y + paddingY;
+    lc.contentW = rect.width - paddingX * 2;
+    lc.contentH = rect.height - paddingY * 2;
+    layoutStack.push_back(lc);
+
+    windowStack.push_back(win);
+    return lc.contentW;
+}
+
+void UIManager::EndWindow() {
+    if (windowStack.empty()) return;
+    windowStack.pop_back();
+    layoutStack.pop_back();
+    PopClipRect();
+}
+
+void UIManager::RowBackground(int height, Color color) {
+    auto& lc = Layout();
+    renderer->FillRect(0, lc.cursorY, windowWidth, height, color);
+}
+
+// ---------------------------------------------------------------------------
+// Scroll area  (lightweight, no chrome)
+// ---------------------------------------------------------------------------
+
+void UIManager::BeginScrollArea(const std::string& id, int width, int height) {
+    UIID uid = GetScopedID(id);
+    auto& lc = Layout();
+    int x = lc.cursorX, y = lc.cursorY;
+
+    int& scrollY = scrollAreaOffsets[uid];
+
+    // Mouse-wheel handling
+    if (IsMouseOver(x, y, width, height) && io.mouseWheelDelta != 0) {
+        mouseOverAnyWidget = true;
+        scrollY -= io.mouseWheelDelta * 20;
+        if (scrollY < 0) scrollY = 0;
+    }
+
+    PushClipRect(x, y, width, height);
+
+    ScrollArea sa;
+    sa.id           = uid;
+    sa.x = x; sa.y = y; sa.w = width; sa.h = height;
+    sa.contentStartY= y;
+    scrollAreaStack.push_back(sa);
+
+    // Push layout offset by scrollY
+    LayoutContext inner;
+    inner.originX = inner.cursorX = x;
+    inner.originY = inner.cursorY = y - scrollY;
+    inner.contentW = width;
+    inner.contentH = 0; // will grow
+    layoutStack.push_back(inner);
+}
+
+void UIManager::EndScrollArea() {
+    if (scrollAreaStack.empty()) return;
+    ScrollArea sa = scrollAreaStack.back();
+    scrollAreaStack.pop_back();
+
+    int contentH = Layout().cursorY - (sa.y - scrollAreaOffsets[sa.id]);
+    layoutStack.pop_back();
+    PopClipRect();
+
+    // Clamp scroll
+    int maxScroll = std::max(0, contentH - sa.h);
+    int& scrollY  = scrollAreaOffsets[sa.id];
+    scrollY       = std::clamp(scrollY, 0, maxScroll);
+
+    // Draw scrollbar if needed
+    if (contentH > sa.h) {
+        const int sbW = 5;
+        float ratio = (float)sa.h / (float)contentH;
+        int   sbH   = std::max(20, (int)(sa.h * ratio));
+        float t     = (maxScroll > 0) ? (float)scrollY / (float)maxScroll : 0.f;
+        int   sbY   = sa.y + (int)((sa.h - sbH) * t);
+        renderer->FillRect(sa.x + sa.w - sbW, sa.y, sbW, sa.h, style.Colors.ListScrollTrack);
+        renderer->FillRect(sa.x + sa.w - sbW, sbY,  sbW, sbH, style.Colors.ListScrollThumb);
+    }
+
+    // Advance parent cursor
+    AdvanceCursor(sa.w, sa.h);
+}
+
+// ---------------------------------------------------------------------------
+// Internal low-level draw
+// ---------------------------------------------------------------------------
+
+bool UIManager::IsMouseOver(int x, int y, int w, int h) const {
     return (io.mouseX >= x && io.mouseX < x + w &&
             io.mouseY >= y && io.mouseY < y + h);
 }
 
-bool DebugInterfaceManager::IsInsideClip(int x, int y, int w, int h) const {
-    if (!activeClip.active) return true;
-    return !(x + w <= activeClip.x ||
-             y + h <= activeClip.y ||
-             x     >= activeClip.x + activeClip.w ||
-             y     >= activeClip.y + activeClip.h);
+void UIManager::DrawRect(int x, int y, int w, int h, Color c) {
+    renderer->DrawRect(x, y, w, h, c);
 }
 
-// Draws a string at (x, baselineY), returning the pen-X after the last glyph.
-// Respects activeClip: glyphs outside the clip region are skipped.
-// If maxWidth > 0 the text is truncated with "…" rather than overflow.
-int DebugInterfaceManager::DrawText(const std::string& text,
-                                    int x, int baselineY,
-                                    Color color, int maxWidth)
-{
-    int penX      = x;
-    char prevChar = '\0';
+void UIManager::FillRect(int x, int y, int w, int h, Color c) {
+    renderer->FillRect(x, y, w, h, c);
+}
 
-    // If we have a width limit, pre-calculate total text width and decide
-    // whether we need to insert an ellipsis.
-    bool needsEllipsis = false;
-    int  ellipsisWidth = 0;
+
+
+int UIManager::DrawTextInternal(const std::string& text,
+                                int x, int baselineY,
+                                Color color, int maxWidth)
+{
+    int penX = x;
+    char prev = '\0';
+
+    bool needEllipsis = false;
+    int  ellipsisW    = 0;
+
     if (maxWidth > 0) {
         auto eg = font.GetGlyph('.');
-        ellipsisWidth = eg.advance * 3;
-
+        ellipsisW = eg.advance * 3;
         int totalW = 0;
-        for (char c : text) {
-            auto g = font.GetGlyph(c);
-            totalW += g.advance;
-        }
-        needsEllipsis = (totalW > maxWidth);
+        for (char c : text) totalW += font.GetGlyph(c).advance;
+        needEllipsis = (totalW > maxWidth);
     }
 
-    int availWidth = needsEllipsis ? (maxWidth - ellipsisWidth) : maxWidth;
-    int drawnWidth = 0;
+    int avail  = needEllipsis ? (maxWidth - ellipsisW) : maxWidth;
+    int drawn  = 0;
 
     for (char c : text) {
-        auto glyph = font.GetGlyph(c);
-
-        if (prevChar != '\0') {
-            int kern = font.GetKerning(c, prevChar).x >> 6;
-            penX      += kern;
-            drawnWidth += kern;
-        }
-
-        if (maxWidth > 0 && drawnWidth + glyph.advance > availWidth) break;
-
-        int gx = penX    + glyph.bearingX;
-        int gy = baselineY - glyph.bearingY;
-
-        if (IsInsideClip(gx, gy, glyph.width, glyph.height)) {
-            renderer->DrawGlyph(gx, gy, glyph, color);
-        }
-
-        penX       += glyph.advance;
-        drawnWidth += glyph.advance;
-        prevChar    = c;
+        auto g = font.GetGlyph(c);
+        if (prev != '\0') { int k = font.GetKerning(c, prev).x >> 6; penX += k; drawn += k; }
+        if (maxWidth > 0 && drawn + g.advance > avail) break;
+        int gx = penX + g.bearingX, gy = baselineY - g.bearingY;
+        if (IsInsideClip(gx, gy, g.width, g.height))
+            renderer->DrawGlyph(gx, gy, g, color);
+        penX  += g.advance;
+        drawn += g.advance;
+        prev   = c;
     }
 
-    if (needsEllipsis) {
+    if (needEllipsis) {
         for (int i = 0; i < 3; ++i) {
-            auto glyph = font.GetGlyph('.');
-            int gx = penX    + glyph.bearingX;
-            int gy = baselineY - glyph.bearingY;
-            if (IsInsideClip(gx, gy, glyph.width, glyph.height)) {
-                renderer->DrawGlyph(gx, gy, glyph, color);
-            }
-            penX += glyph.advance;
+            auto g = font.GetGlyph('.');
+            int gx = penX + g.bearingX, gy = baselineY - g.bearingY;
+            if (IsInsideClip(gx, gy, g.width, g.height))
+                renderer->DrawGlyph(gx, gy, g, color);
+            penX += g.advance;
         }
     }
-
     return penX;
+}
+
+void UIManager::DrawText(const std::string& text, int x, int baselineY,
+                         Color color, int maxWidth) {
+    DrawTextInternal(text, x, baselineY, color, maxWidth);
+}
+
+int UIManager::MeasureText(const std::string& text) const {
+    int w = 0;
+    for (char c : text) w += font.GetGlyph(c).advance;
+    return w;
 }
 
 // ---------------------------------------------------------------------------
 // Label
 // ---------------------------------------------------------------------------
 
-int DebugInterfaceManager::Label(const std::string& text, Color color, int maxWidth) {
-    int x          = cursorX;
-    int y          = cursorY;
-    int baselineY  = y + 14;   // Simple fixed baseline for 14px font
-
-    int endX = DrawText(text, x, baselineY, color, maxWidth);
-
-    int width = endX - x;
-    cursorX  += width;
-    if (16 > maxRowHeight) maxRowHeight = 16;
-
-    return width;
+WidgetResult UIManager::Label(const std::string& text, Color color, int maxWidth) {
+    auto& lc = Layout();
+    int x = lc.cursorX, y = lc.cursorY;
+    int baseline = y + 14;
+    int endX = DrawTextInternal(text, x, baseline, color, maxWidth);
+    int w = endX - x;
+    int h = 16;
+    AdvanceCursor(w, h);
+    WidgetResult r;
+    r.hovered = IsMouseOver(x, y, w, h);
+    return r;
 }
 
 // ---------------------------------------------------------------------------
 // Separator
 // ---------------------------------------------------------------------------
 
-void DebugInterfaceManager::Separator(Color color) {
+void UIManager::Separator(Color color) {
     NewLine(2);
-    renderer->FillRect(0, cursorY, windowWidth, 1, color);
-    cursorY     += 4;
-    maxRowHeight = 0;
+    auto& lc = Layout();
+    renderer->FillRect(lc.originX, lc.cursorY, lc.contentW > 0 ? lc.contentW : windowWidth, 1, color);
+    lc.cursorY  += 4;
+    lc.maxRowH   = 0;
 }
 
 // ---------------------------------------------------------------------------
 // Button
 // ---------------------------------------------------------------------------
 
-bool DebugInterfaceManager::Button(const std::string& label, int width, int height) {
-    UIID id = GetID(label);
-    bool clicked = false;
+WidgetResult UIManager::Button(const std::string& label, int width, int height) {
+    if (height < 0) height = style.Vars.DefaultItemHeight;
 
-    int x = cursorX;
-    int y = cursorY;
-    cursorX += width;
-    if (height > maxRowHeight) maxRowHeight = height;
+    UIID id = GetScopedID(label);
+    auto& lc = Layout();
+    int x = lc.cursorX, y = lc.cursorY;
+    AdvanceCursor(width, height);
 
-    if (IsMouseOver(x, y, width, height)) {
+    WidgetResult r;
+    r.hovered = IsMouseOver(x, y, width, height);
+    if (r.hovered) {
+        mouseOverAnyWidget = true;
         hotID = id;
-        if (activeID == 0 && io.mouseLeftClicked) activeID = id;
+        if (activeID == UI_ID_NONE && io.mouseLeftClicked) activeID = id;
+    }
+    r.held      = (hotID == id && activeID == id);
+    r.activated = (hotID == id && activeID == id && !io.mouseLeftDown);
+
+    Color bg = style.Colors.ButtonNormal;
+    if (hotID == id) bg = r.held ? style.Colors.ButtonActive : style.Colors.ButtonHover;
+
+    FillRectRound(x, y, width, height, style.Vars.ButtonRounding, bg, style.Vars.ButtonRoundingCorners);
+    DrawTextInternal(label, x + 8, y + (height / 2) + 5, style.Colors.ButtonText, width - 8);
+
+    return r;
+}
+
+WidgetResult UIManager::SvgButton(const std::string &id, const UI_Image& svg, int width, int height) {
+    if (height < 0) height = style.Vars.DefaultItemHeight;
+
+    UIID uid = GetScopedID(id);
+    auto& lc = Layout();
+    int x = lc.cursorX, y = lc.cursorY;
+    AdvanceCursor(width, height);
+
+    WidgetResult r;
+    r.hovered = IsMouseOver(x, y, width, height);
+    if (r.hovered) {
+        mouseOverAnyWidget = true;
+        hotID = uid;
+        if (activeID == UI_ID_NONE && io.mouseLeftClicked) activeID = uid;
+    }
+    r.held      = (hotID == uid && activeID == uid);
+    r.activated = (hotID == uid && activeID == uid && !io.mouseLeftDown);
+
+    Color bg = style.Colors.ButtonNormal;
+    if (hotID == uid) bg = r.held ? style.Colors.ButtonActive : style.Colors.ButtonHover;
+
+    FillRectRound(x, y, width, height, style.Vars.ButtonRounding, bg, style.Vars.ButtonRoundingCorners);
+    x += 4;
+    y += 4;
+    int w = std::min(width - 8, svg.width);
+    int h = std::min(height - 8, svg.height);
+    for (int i = 0; i < h; i++) {
+        for (int j = 0; j < w; j++) {
+            renderer->DrawPixel(
+                x + j,
+                y + i,
+                svg.img[j + i * svg.width]
+            );
+        }
     }
 
-    Color btnColor = {55, 57, 60};
-    if (hotID == id) {
-        btnColor = (activeID == id) ? Color{90, 92, 95} : Color{70, 72, 75};
-    }
-
-    if (hotID == id && activeID == id && !io.mouseLeftDown) clicked = true;
-
-    renderer->FillRectBeveled(x, y, width, height, 2, btnColor);
-
-    int baselineY = y + (height / 2) + 5;
-    DrawText(label, x + 8, baselineY, Color{210, 212, 215});
-
-    return clicked;
+    return r;
 }
 
 // ---------------------------------------------------------------------------
 // Tab
 // ---------------------------------------------------------------------------
 
-bool DebugInterfaceManager::Tab(const std::string& id_str, std::string& title,
-                                bool isActive, int width, int height)
+WidgetResult UIManager::Tab(const std::string& id_str, std::string& title,
+                            bool isActive, int width, int height)
 {
-    UIID id = GetID(id_str);
-    bool selected = false;
+    if (height < 0) height = style.Vars.DefaultItemHeight;
+    UIID id = GetScopedID(id_str);
+    auto& lc = Layout();
+    int x = lc.cursorX, y = lc.cursorY;
+    AdvanceCursor(width, height);
 
-    int x = cursorX;
-    int y = cursorY;
-    cursorX += width;
-    if (height > maxRowHeight) maxRowHeight = height;
-
-    if (IsMouseOver(x, y, width, height)) {
+    WidgetResult r;
+    r.hovered = IsMouseOver(x, y, width, height);
+    if (r.hovered) {
+        mouseOverAnyWidget = true;
         hotID = id;
         if (io.mouseLeftClicked) {
-            activeID = id;
-            focusID  = id;
-            selected = true;
+            activeID = id; focusID = id;
+            r.activated = true;
         }
     } else if (io.mouseLeftClicked && focusID == id && !isActive) {
-        focusID = 0;
+        focusID = UI_ID_NONE;
     }
 
     if (focusID == id) {
-        if (io.backspacePressed && !title.empty()) title.pop_back();
-        if (io.lastTypedChar >= 32 && io.lastTypedChar <= 126)
-            title.push_back(io.lastTypedChar);
+        if (io.backspacePressed && !title.empty()) { title.pop_back(); r.changed = true; }
+        if (io.lastTypedChar >= 32 && io.lastTypedChar <= 126) {
+            title.push_back(io.lastTypedChar); r.changed = true;
+        }
+        if (io.enterPressed) r.activated = true;
     }
 
-    Color tabBg = isActive ? Color{45, 47, 50} : Color{32, 34, 37};
-    if (!isActive && hotID == id) tabBg = Color{38, 40, 43};
-    renderer->FillRectBeveled(x, y, width, height, 3, tabBg);
+    Color bg = isActive ? style.Colors.TabActive : style.Colors.TabIdle;
+    if (!isActive && hotID == id) bg = style.Colors.TabHover;
 
-    // Active tab: accent bar along the top
-    if (isActive) {
-        renderer->FillRect(x, y, width, 2, Color{88, 166, 255});
-    }
+    FillRectRound(x, y, width, height, style.Vars.TabRounding, bg, style.Vars.TabRoundingCorners);
+    if (isActive)
+        renderer->FillRect(x, y, width, 2, style.Colors.TabAccent);
 
-    int baselineY = y + (height / 2) + 5;
-    DrawText(title, x + 8, baselineY, Color{200, 202, 205}, width - 16);
-
-    return selected || (focusID == id && io.enterPressed);
+    DrawTextInternal(title, x + 8, y + (height / 2) + 5, style.Colors.TabText, width - 16);
+    return r;
 }
 
 // ---------------------------------------------------------------------------
 // Checkbox
 // ---------------------------------------------------------------------------
 
-bool DebugInterfaceManager::Checkbox(const std::string& id_str,
-                                     const std::string& label, bool& checked)
+WidgetResult UIManager::Checkbox(const std::string& id_str,
+                                 const std::string& label, bool& checked)
 {
-    UIID id = GetID(id_str);
-    bool changed = false;
-
+    UIID id = GetScopedID(id_str);
     const int boxSize = 14;
-    int x = cursorX;
-    int y = cursorY;
+    auto& lc = Layout();
+    int x = lc.cursorX, y = lc.cursorY;
 
-    if (IsMouseOver(x, y, boxSize, boxSize)) {
+    int labelW = MeasureText(label);
+    int totalW = boxSize + 5 + labelW;
+    int totalH = boxSize;
+
+    WidgetResult r;
+    r.hovered = IsMouseOver(x, y, boxSize, boxSize);
+    if (r.hovered) {
+        mouseOverAnyWidget = true;
         hotID = id;
-        if (activeID == 0 && io.mouseLeftClicked) activeID = id;
+        if (activeID == UI_ID_NONE && io.mouseLeftClicked) activeID = id;
     }
-
     if (hotID == id && activeID == id && !io.mouseLeftDown) {
-        checked = !checked;
-        changed  = true;
+        checked   = !checked;
+        r.changed = r.activated = true;
     }
 
-    Color boxBg = checked ? Color{88, 166, 255} : Color{55, 57, 60};
-    renderer->FillRectBeveled(x, y, boxSize, boxSize, 2, boxBg);
+    Color bg = checked ? style.Colors.CheckboxChecked : style.Colors.CheckboxIdle;
+    FillRectRound(x, y, boxSize, boxSize, style.Vars.CheckboxRounding, bg, style.Vars.CheckboxRoundingCorners);
 
     if (checked) {
-        // Simple tick: two small rects forming a checkmark shape
-        renderer->FillRect(x + 3, y + 7,  4, 2, Color{255, 255, 255});
-        renderer->FillRect(x + 6, y + 4,  2, 5, Color{255, 255, 255});
+        renderer->FillRect(x + 3, y + 7, 4, 2, style.Colors.CheckboxMark);
+        renderer->FillRect(x + 6, y + 4, 2, 5, style.Colors.CheckboxMark);
     }
 
-    cursorX += boxSize + 5;
-    if (boxSize > maxRowHeight) maxRowHeight = boxSize;
-
-    DrawText(label, cursorX, y + boxSize - 2, Color{200, 202, 205});
-
-    // Advance cursor past label
-    int labelW = 0;
-    for (char c : label) labelW += font.GetGlyph(c).advance;
-    cursorX += labelW;
-
-    return changed;
+    DrawTextInternal(label, x + boxSize + 5, y + boxSize - 2, style.Colors.Text, boxSize - 10);
+    AdvanceCursor(totalW, totalH);
+    return r;
 }
 
 // ---------------------------------------------------------------------------
 // ColorBadge
 // ---------------------------------------------------------------------------
 
-void DebugInterfaceManager::ColorBadge(const std::string& label,
-                                       Color bg, Color fg,
-                                       int paddingX, int paddingH)
+WidgetResult UIManager::ColorBadge(const std::string& label,
+                                   Color bg, Color fg,
+                                   int paddingX, int paddingH)
 {
-    int textW = 0;
-    for (char c : label) textW += font.GetGlyph(c).advance;
-
+    int textW  = MeasureText(label);
     int badgeW = textW + paddingX * 2;
     int badgeH = 14 + paddingH * 2;
 
-    int x = cursorX;
-    int y = cursorY;
+    auto& lc = Layout();
+    int x = lc.cursorX, y = lc.cursorY;
 
-    renderer->FillRectBeveled(x, y, badgeW, badgeH, 3, bg);
+    FillRectRound(x, y, badgeW, badgeH, style.Vars.BadgeRounding, bg, style.Vars.BadgeRoundingCorners);
+    DrawTextInternal(label, x + paddingX, y + badgeH / 2 + 5, fg, badgeW - paddingX * 2);
 
-    int baselineY = y + badgeH / 2 + 5;
-    DrawText(label, x + paddingX, baselineY, fg);
-
-    cursorX += badgeW;
-    if (badgeH > maxRowHeight) maxRowHeight = badgeH;
+    WidgetResult r;
+    r.hovered = IsMouseOver(x, y, badgeW, badgeH);
+    if (r.hovered) mouseOverAnyWidget = true;
+    AdvanceCursor(badgeW, badgeH);
+    return r;
 }
 
 // ---------------------------------------------------------------------------
-// TextField / AddressBar shared guts
+// TextInputWidget  (shared core)
 // ---------------------------------------------------------------------------
 
-bool DebugInterfaceManager::TextInputWidget(UIID id,
-                                            std::string& text,
-                                            int x, int y,
-                                            int width, int height,
-                                            Color focusBorderColor)
+WidgetResult UIManager::TextInputWidget(UIID id, std::string& text,
+                                        int x, int y, int w, int h)
 {
-    TextFieldState& s = textFieldStates[id];
+    TextFieldState& s = GetTextFieldState(id);
+    WidgetResult result;
 
-    bool mouseOver = IsMouseOver(x, y, width, height);
-
-    if (mouseOver) {
+    bool over = IsMouseOver(x, y, w, h);
+    if (over) {
+        mouseOverAnyWidget = true;
         hotID = id;
         if (io.mouseLeftClicked) {
-            focusID    = id;
-            s.isDragging       = true;
-            s.selectStartIndex = -1;
+            focusID = id; s.isDragging = true; s.selectStartIndex = -1;
         }
     } else if (io.mouseLeftClicked && focusID == id) {
-        focusID    = 0;
-        s.isDragging = false;
+        focusID = UI_ID_NONE; s.isDragging = false;
     }
-
     if (!io.mouseLeftDown) s.isDragging = false;
+    result.hovered = over;
+    result.held    = (focusID == id && s.isDragging);
 
     if (focusID == id) {
         bool hasSel = (s.selectStartIndex != -1 && s.selectStartIndex != s.cursorIndex);
-        int selMin  = hasSel ? std::min(s.selectStartIndex, s.cursorIndex) : 0;
-        int selMax  = hasSel ? std::max(s.selectStartIndex, s.cursorIndex) : 0;
+        int  selMin = hasSel ? std::min(s.selectStartIndex, s.cursorIndex) : 0;
+        int  selMax = hasSel ? std::max(s.selectStartIndex, s.cursorIndex) : 0;
 
         if (io.backspacePressed) {
             if (hasSel) {
                 text.erase(selMin, selMax - selMin);
-                s.cursorIndex = selMin;
-                s.selectStartIndex = s.cursorIndex;
+                s.cursorIndex = selMin; s.selectStartIndex = selMin;
             } else if (s.cursorIndex > 0) {
                 text.erase(s.cursorIndex - 1, 1);
-                s.cursorIndex--;
-                s.selectStartIndex = s.cursorIndex;
+                --s.cursorIndex; s.selectStartIndex = s.cursorIndex;
             }
+            result.changed = true;
         } else if (io.lastTypedChar >= 32 && io.lastTypedChar <= 126) {
-            if (hasSel) {
-                text.erase(selMin, selMax - selMin);
-                s.cursorIndex = selMin;
-            }
+            if (hasSel) { text.erase(selMin, selMax - selMin); s.cursorIndex = selMin; }
             text.insert(text.begin() + s.cursorIndex, io.lastTypedChar);
-            s.cursorIndex++;
-            s.selectStartIndex = s.cursorIndex;
+            ++s.cursorIndex; s.selectStartIndex = s.cursorIndex;
+            result.changed = true;
         }
 
         s.cursorIndex = std::clamp(s.cursorIndex, 0, (int)text.size());
+        if (io.enterPressed) result.activated = true;
     }
 
-    // Pre-calculate char X positions
+    // Build per-character X positions
     std::vector<int> charX;
     charX.reserve(text.size() + 1);
-    int penX     = x + 8;
-    char prevChar = '\0';
+    int penX = x + 8; char prev = '\0';
     charX.push_back(penX);
-    s.cursorIndex = std::clamp(s.cursorIndex, 0, (int)text.size());
+    s.cursorIndex      = std::clamp(s.cursorIndex,      0, (int)text.size());
     s.selectStartIndex = std::clamp(s.selectStartIndex, 0, (int)text.size());
     for (char c : text) {
         auto g = font.GetGlyph(c);
-        if (prevChar != '\0') penX += font.GetKerning(c, prevChar).x >> 6;
-        penX += g.advance;
-        charX.push_back(penX);
-        prevChar = c;
+        if (prev != '\0') penX += font.GetKerning(c, prev).x >> 6;
+        penX += g.advance; charX.push_back(penX); prev = c;
     }
 
-    // Mouse picking
     if (focusID == id && (io.mouseLeftClicked || s.isDragging)) {
-        int target = 0, minDist = 999999;
-        for (size_t i = 0; i < charX.size(); ++i) {
+        int target = 0, minD = 999999;
+        for (int i = 0; i < (int)charX.size(); ++i) {
             int d = std::abs(io.mouseX - charX[i]);
-            if (d < minDist) { minDist = d; target = (int)i; }
+            if (d < minD) { minD = d; target = i; }
         }
-        if (io.mouseLeftClicked) {
-            s.cursorIndex      = target;
-            s.selectStartIndex = target;
-        } else {
-            s.cursorIndex = target;
-        }
+        if (io.mouseLeftClicked) { s.cursorIndex = target; s.selectStartIndex = target; }
+        else                     { s.cursorIndex = target; }
     }
 
-    // Draw background + border
-    Color borderColor = (focusID == id) ? focusBorderColor : Color{70, 72, 75};
-    renderer->FillRectWithBorder(x, y, width, height, Color{38, 40, 43}, borderColor);
+    // Draw
+    Color Bg = (focusID == id) ? style.Colors.InputFocused : style.Colors.InputBg;
+    FillRectRound(x, y, w, h, style.Vars.InputRounding, Bg, style.Vars.InputRoundingCorners);
 
-    // Selection highlight
-    bool hasSel = (focusID == id &&
-                   s.selectStartIndex != -1 &&
-                   s.selectStartIndex != s.cursorIndex);
-    int selMin = hasSel ? std::min(s.selectStartIndex, s.cursorIndex) : 0;
-    int selMax = hasSel ? std::max(s.selectStartIndex, s.cursorIndex) : 0;
+    bool hasSel = (focusID == id && s.selectStartIndex != -1 && s.selectStartIndex != s.cursorIndex);
+    int  selMin = hasSel ? std::min(s.selectStartIndex, s.cursorIndex) : 0;
+    int  selMax = hasSel ? std::max(s.selectStartIndex, s.cursorIndex) : 0;
 
     if (hasSel) {
-        int hx = charX[selMin];
-        int hw = charX[selMax] - hx;
-        renderer->FillRect(hx, y + 3, hw, height - 6, Color{40, 90, 160});
+        renderer->FillRect(charX[selMin], y + 3,
+                           charX[selMax] - charX[selMin], h - 6,
+                           style.Colors.InputSelection);
     }
 
-    // Draw text glyphs
-    int drawPenX = x + 8;
-    prevChar = '\0';
-    int baselineY = y + (height / 2) + 5;
-    for (size_t i = 0; i < text.size(); ++i) {
+    int drawX = x + 8; prev = '\0';
+    int baseline = y + (h / 2) + 5;
+    for (int i = 0; i < (int)text.size(); ++i) {
         char c = text[i];
         auto g = font.GetGlyph(c);
-        if (g.width == 0 && c != ' ') { drawPenX += g.advance; continue; }
-        if (prevChar != '\0') drawPenX += font.GetKerning(c, prevChar).x >> 6;
-
-        Color tc = (hasSel && (int)i >= selMin && (int)i < selMax)
-                   ? Color{180, 210, 255} : Color{210, 212, 215};
-
-        renderer->DrawGlyph(drawPenX + g.bearingX, baselineY - g.bearingY, g, tc);
-        drawPenX += g.advance;
-        prevChar  = c;
+        if (g.width == 0 && c != ' ') { drawX += g.advance; continue; }
+        if (prev != '\0') drawX += font.GetKerning(c, prev).x >> 6;
+        Color tc = (hasSel && i >= selMin && i < selMax)
+                   ? style.Colors.InputSelText : style.Colors.InputText;
+        renderer->DrawGlyph(drawX + g.bearingX, baseline - g.bearingY, g, tc);
+        drawX += g.advance; prev = c;
     }
 
-    // Cursor bar
-    if (focusID == id && s.cursorIndex < (int)charX.size()) {
-        renderer->FillRect(charX[s.cursorIndex], y + 3, 2, height - 6, Color{180, 210, 255});
+    // Blinking cursor
+    double now = NowMs();
+    if (s.CursorLastBlink == 0.0) s.CursorLastBlink = now;
+    s.CursorBlinkTime = now;
+    if (now >= s.CursorLastBlink + 500.0) {
+        s.CursorLastBlink = now;
+        s.cursorBlink = !s.cursorBlink;
     }
 
-    return (focusID == id && io.enterPressed);
+    if (focusID == id && s.cursorBlink && s.cursorIndex < (int)charX.size()) {
+        int padT = 6, padB = 6;
+        renderer->FillRect(charX[s.cursorIndex], y + padT, 2, h - padT - padB,
+                           style.Colors.InputCursor);
+    }
+
+    return result;
 }
 
-bool DebugInterfaceManager::TextField(const std::string& id_str,
-                                      std::string& text,
-                                      int width, int height)
+WidgetResult UIManager::TextField(const std::string& id_str, std::string& text,
+                                  int width, int height)
 {
-    UIID id = GetID(id_str);
-    int x = cursorX, y = cursorY;
-    cursorX += width;
-    if (height > maxRowHeight) maxRowHeight = height;
-    return TextInputWidget(id, text, x, y, width, height, Color{88, 166, 255});
+    if (height < 0) height = style.Vars.DefaultItemHeight;
+    UIID id = GetScopedID(id_str);
+    auto& lc = Layout();
+    int x = lc.cursorX, y = lc.cursorY;
+    AdvanceCursor(width, height);
+    return TextInputWidget(id, text, x, y, width, height);
 }
 
-bool DebugInterfaceManager::AddressBar(const std::string& id_str,
-                                       std::string& text,
-                                       int width, int height)
+WidgetResult UIManager::AddressBar(const std::string& id_str, std::string& text,
+                                   int width, int height)
 {
-    UIID id = GetID(id_str);
-    int x = cursorX, y = cursorY;
-    cursorX += width;
-    if (height > maxRowHeight) maxRowHeight = height;
-    return TextInputWidget(id, text, x, y, width, height, Color{66, 133, 244});
+    if (height < 0) height = style.Vars.DefaultItemHeight;
+    UIID id = GetScopedID(id_str);
+    auto& lc = Layout();
+    int x = lc.cursorX, y = lc.cursorY;
+    AdvanceCursor(width, height);
+    return TextInputWidget(id, text, x, y, width, height);
+}
+
+void UIManager::Text(const std::string& id_str,
+                     const std::string& text,
+                     int width,
+                     int height)
+{
+    auto& lc = Layout();
+
+    int x = lc.cursorX;
+    int y = lc.cursorY;
+
+    int textW = MeasureText(text);
+
+    if (width <= 0)
+        width = textW;
+
+    if (height <= 0)
+        height = 16;
+
+    int baseline = y + height / 2 + 5;
+
+    DrawTextInternal(
+        text,
+        x,
+        baseline,
+        style.Colors.Text,
+        width
+    );
+
+    AdvanceCursor(width, height);
 }
 
 // ---------------------------------------------------------------------------
 // ScrollableList
 // ---------------------------------------------------------------------------
 
-int DebugInterfaceManager::ScrollableList(const std::string& id_str,
-                                          std::vector<ListRow>& rows,
-                                          int width, int height, bool flip,
-                                          int rowHeight)
+bool UIManager::BeginListBox(const std::string& id_str, int width, int height,
+                             bool flip, int rowHeight)
 {
-    UIID id  = GetID(id_str);
-    auto& ls = listStates[id];
+    UIID id  = GetScopedID(id_str);
+    auto& ls = listBoxStates[id];
+    auto& lc = Layout();
 
-    int x = cursorX;
-    int y = cursorY;
-    cursorX += width;
-    if (height > maxRowHeight) maxRowHeight = height;
+    int x = lc.cursorX, y = lc.cursorY;
+    AdvanceCursor(width, height);
 
-    // Total content height
-    int totalH = (int)rows.size() * rowHeight;
-
-    // Clamp scroll so we never over-scroll
-    int maxScroll = std::max(0, totalH - height);
-    ls.scrollOffsetY = std::clamp(ls.scrollOffsetY, 0, maxScroll);
-
-    // --- Mouse wheel scroll (only when hovered) ---
+    // Scroll
     if (IsMouseOver(x, y, width, height) && io.mouseWheelDelta != 0) {
-        // Flipping scroll direction contextually feels more intuitive if kept standard,
-        // but if you want wheel down to always mean "move content up", leave this unchanged.
-        ls.scrollOffsetY -= io.mouseWheelDelta * rowHeight * 3;
-        ls.scrollOffsetY  = std::clamp(ls.scrollOffsetY, 0, maxScroll);
+
+        int scrollMod = flip ? 1 : -1;
+
+        ls.scrollOffsetY -=
+            io.mouseWheelDelta * rowHeight * 3 * scrollMod;
+
+        // clamp immediately using previous-frame content size
+        int maxScroll = std::max(0, ls.contentHeight - height);
+
+        ls.scrollOffsetY =
+            std::clamp(ls.scrollOffsetY, 0, maxScroll);
     }
 
-// --- Click detection: which row was hit? ---
-int clickedRow = -1;
-if (IsMouseOver(x, y, width, height) && io.mouseLeftClicked) {
-    int hiddenIndentThreshold = -1;
-    int visualRowIndex = 0;
+    renderer->FillRect(x, y, width, height, style.Colors.ListBg);
+    renderer->DrawRect(x, y, width, height, style.Colors.ListBorder);
 
-    // First, count total visible rows if we need it for the flip math
-    int totalVisibleRows = 0;
-    if (flip) {
-        int tempHiddenThreshold = -1;
-        for (const auto& row : rows) {
-            if (tempHiddenThreshold != -1) {
-                if (row.IndentLevel > tempHiddenThreshold) continue;
-                else tempHiddenThreshold = -1;
-            }
-            if (row.isCollapsed) tempHiddenThreshold = row.IndentLevel;
-            totalVisibleRows++;
-        }
-    }
+    // NOTE: Ensure your renderer implements actual scissor testing here!
+    PushClipRect(x, y, width, height);
 
-    for (int i = 0; i < (int)rows.size(); ++i) {
-        auto& row = rows[i];
+    // Set up context for Selectable calls
+    activeListBox = {id, x, y, width, height, rowHeight, 0, flip, &ls};
+    inListBox     = true;
 
-        // 1. COLLAPSING LOGIC: Skip hidden rows completely
-        if (hiddenIndentThreshold != -1) {
-            if (row.IndentLevel > hiddenIndentThreshold) {
-                continue;
-            } else {
-                hiddenIndentThreshold = -1;
-            }
-        }
-        if (row.isCollapsed) {
-            hiddenIndentThreshold = row.IndentLevel;
-        }
+    // Push inner layout — Selectable will use this cursor
+    LayoutContext inner;
+    inner.originX  = inner.cursorX = x;
+    inner.originY  = inner.cursorY = y - ls.scrollOffsetY;
+    inner.contentW = width;
+    layoutStack.push_back(inner);
 
-        // 2. Y-COORDINATE CALCULATION
-        int rowY = 0;
-        if (flip) {
-            int rowFromBottom = (totalVisibleRows - 1) - visualRowIndex;
-            rowY = (y + height) - (rowFromBottom * rowHeight) + ls.scrollOffsetY - rowHeight;
-        } else {
-            rowY = y + (visualRowIndex * rowHeight) - ls.scrollOffsetY;
-        }
-
-        // 3. HIT DETECTION
-        if (io.mouseY >= rowY && io.mouseY < (rowY + rowHeight)) {
-            int indentWidth = row.IndentLevel * 16;
-            int toggleLeft  = x + 6 + indentWidth;
-            int toggleWidth = 12;
-
-            bool hasChildren = (rows.size() > i + 1) && (rows[i + 1].IndentLevel > row.IndentLevel);
-
-            if (hasChildren && io.mouseX >= toggleLeft && io.mouseX <= (toggleLeft + toggleWidth)) {
-                row.isCollapsed = !row.isCollapsed;
-            } else {
-                ls.selectedRow = i;
-                clickedRow     = i;
-            }
-            break;
-        }
-
-        visualRowIndex++;
-    }
-}
-    // --- Draw background ---
-renderer->FillRect(x, y, width, height, Color{28, 30, 33});
-
-// --- Push clip rect so rows don't bleed outside the viewport ---
-PushClipRect(x, y, width, height);
-
-// --- Draw rows ---
-int hiddenIndentThreshold = -1;
-int visualRowIndex = 0;
-
-// Count total visible rows first if 'flip' logic requires it
-int totalVisibleRows = 0;
-if (flip) {
-    int tempHiddenThreshold = -1;
-    for (const auto& r : rows) {
-        if (tempHiddenThreshold != -1) {
-            if (r.IndentLevel > tempHiddenThreshold) continue;
-            else tempHiddenThreshold = -1;
-        }
-        if (r.isCollapsed) tempHiddenThreshold = r.IndentLevel;
-        totalVisibleRows++;
-    }
+    return true;
 }
 
-for (int i = 0; i < (int)rows.size(); ++i) {
-    ListRow& row = rows[i];
+void UIManager::EndListBox() {
+    if (!inListBox) return;
 
-    // --- 1. COLLAPSING LOGIC ---
-    if (hiddenIndentThreshold != -1) {
-        if (row.IndentLevel > hiddenIndentThreshold) {
-            continue; // Skip rendering and don't increment visualRowIndex
-        } else {
-            hiddenIndentThreshold = -1;
-        }
-    }
+    // Clamp scroll now that we know total content height
+    auto& lb  = activeListBox;
+    auto& ls  = *lb.state;
+    int totalH    = lb.visibleRow * lb.rowHeight;
+    ls.contentHeight = totalH;
+    int maxScroll = std::max(0, totalH - lb.h);
+    ls.scrollOffsetY =
+    std::clamp(ls.scrollOffsetY, 0, maxScroll);
 
-    if (row.isCollapsed) {
-        hiddenIndentThreshold = row.IndentLevel;
-    }
-
-    // --- Y COORDINATE MATH ---
-    int rowY = 0;
-    if (flip) {
-        int rowFromBottom = (totalVisibleRows - 1) - visualRowIndex;
-        rowY = (y + height) - (rowFromBottom * rowHeight) + ls.scrollOffsetY - rowHeight;
-    } else {
-        rowY = y + (visualRowIndex * rowHeight) - ls.scrollOffsetY;
-    }
-
-    // Advance visual counter immediately for the next visible item
-    visualRowIndex++;
-
-    // --- FRUSTUM CULLING (Optimization) ---
-    // Skip rendering calculations if the row is completely off-screen vertically
-    if (rowY + rowHeight < y || rowY > y + height) {
-        continue;
-    }
-
-    // --- BACKGROUND RENDERING ---
-    Color rowBg = (ls.selectedRow == i) ? Color{50, 80, 130} : ((i % 2 == 1) ? Color{32, 34, 37} : Color{28, 30, 33});
-    if (row.hasTint) {
-        rowBg.r = (rowBg.r + row.rowTint.r) / 2;
-        rowBg.g = (rowBg.g + row.rowTint.g) / 2;
-        rowBg.b = (rowBg.b + row.rowTint.b) / 2;
-    }
-
-    renderer->FillRect(x, rowY, width, rowHeight, rowBg);
-
-    if (ls.selectedRow != i && IsMouseOver(x, rowY, width, rowHeight)) {
-        renderer->FillRect(x, rowY, width, rowHeight, Color{42, 44, 47});
-    }
-
-    // --- 2. INDENTATION LOGIC ---
-    int indentWidth = row.IndentLevel * 16;
-    int contentX = x + 6 + indentWidth;
-    int baselineY = rowY + rowHeight / 2 + 5;
-
-    bool hasChildren = (rows.size() > i + 1) && (rows[i + 1].IndentLevel > row.IndentLevel);
-    if (hasChildren) {
-        std::string toggleIcon = row.isCollapsed ? ">" : "v";
-        DrawText(toggleIcon, contentX, baselineY, Color{150, 152, 155});
-        contentX += 12;
-    }
-
-    // --- TEXT RENDERING ---
-    if (!row.badgeLabel.empty()) {
-        int bw = 0; for (char c : row.badgeLabel) bw += font.GetGlyph(c).advance; bw += 8;
-        renderer->FillRectBeveled(contentX, rowY + 2, bw, rowHeight - 4, 2, row.badgeColor);
-        DrawText(row.badgeLabel, contentX + 4, baselineY, row.badgeText);
-        contentX += bw + 6;
-    }
-
-    int annotW = 0;
-    if (!row.annotation.empty()) {
-        for (char c : row.annotation) annotW += font.GetGlyph(c).advance; annotW += 12;
-    }
-
-    int textMaxW = (x + width - annotW) - contentX - 4;
-    if (textMaxW > 0) {
-        DrawText(row.text, contentX, baselineY, row.TextColor, textMaxW);
-    }
-
-    if (!row.annotation.empty()) {
-        DrawText(row.annotation, x + width - annotW, baselineY, row.AnnotationColor);
-    }
-}
-
-PopClipRect();
-
-    // --- Scrollbar ---
-    if (totalH > height) {
+    // Scrollbar
+    if (totalH > lb.h) {
         const int sbW = 5;
-        int sbX      = x + width - sbW;
-        float ratio  = (float)height / (float)totalH;
-        int   sbH    = std::max(20, (int)(height * ratio));
-        float scroll = (float)ls.scrollOffsetY / (float)maxScroll;
+        float ratio = (float)lb.h / (float)totalH;
+        int   sbH   = std::max(20, (int)(lb.h * ratio));
+        float t     = maxScroll > 0 ? (float)ls.scrollOffsetY / (float)maxScroll : 0.f;
+        int   sbY   = lb.y + (int)((lb.h - sbH) * t);
 
-        int sbY = 0;
-        if (flip) {
-            // ScrollOffset 0 means we are tracking the newest items at the bottom.
-            // Scrollbar handle should be at the bottom.
-            sbY = (y + height - sbH) - (int)((height - sbH) * scroll);
-        } else {
-            sbY = y + (int)((height - sbH) * scroll);
-        }
-
-        renderer->FillRect(sbX, y,   sbW, height, Color{35, 37, 40});
-        renderer->FillRect(sbX, sbY, sbW, sbH,    Color{90, 92, 95});
+        renderer->FillRect(lb.x + lb.w - sbW, lb.y, sbW, lb.h, style.Colors.ListScrollTrack);
+        renderer->FillRect(lb.x + lb.w - sbW, sbY,  sbW, sbH,  style.Colors.ListScrollThumb);
     }
 
-    // Border around the whole list
-    renderer->DrawRect(x, y, width, height, Color{55, 57, 60});
+    layoutStack.pop_back();
+    PopClipRect();
+    inListBox = false;
 
-    return clickedRow;
+
 }
 
-int DebugInterfaceManager::GetListSelection(const std::string& id_str) {
-    UIID id = GetID(id_str);
+bool UIManager::Selectable(const std::string& id_str, const std::string& text,bool selected,
+                            int width, int height, Color textColor)
+{
+    UIID  id  = GetScopedID(id_str);
+    auto& lc  = Layout();
+
+    int x = lc.cursorX;
+    int y = lc.cursorY;
+    int w = (width  > 0) ? width  : (lc.contentW > 0 ? lc.contentW : windowWidth);
+    int h = (height > 0) ? height : style.Vars.DefaultItemHeight;
+
+    // Delegate row tracking to the context
+    int row = inListBox ? activeListBox.visibleRow++ : -1;
+    auto* ls = inListBox ? activeListBox.state : nullptr;
+
+    // FIX 3: Software Culling to prevent clipping into other UI elements
+    if (inListBox) {
+        auto& lb = activeListBox;
+        if (y + h <= lb.y || y >= lb.y + lb.h) {
+            AdvanceCursor(w, h); // Must still advance cursor for layout!
+            return false;        // Skip rendering and interaction completely
+        }
+    }
+
+    Color rowBg = selected
+        ? style.Colors.ListRowSelected
+        : (row >= 0 && row % 2 == 1 ? style.Colors.ListRowOdd : style.Colors.ListRowEven);
+
+    // Outside a list, unselected selectables are transparent by default
+    if (!inListBox && !selected) rowBg = {0, 0, 0, 0};
+
+    renderer->FillRect(x, y, w, h, rowBg);
+
+    bool hovered = IsMouseOver(x, y, w, h);
+    if (hovered) {
+        mouseOverAnyWidget = true;
+        if (!selected)
+            renderer->FillRect(x, y, w, h, style.Colors.ListRowHover);
+    }
+
+    bool clicked = hovered && io.mouseLeftClicked;
+    if (clicked && ls) ls->selectedRow = row;
+
+    AdvanceCursor(w, h);
+
+    Color tc = (textColor.a == 0) ? style.Colors.Text : textColor;
+    DrawTextInternal(text, x + 6, y + h / 2 + 5, tc, w - 12);
+
+    return clicked;
+}
+
+int UIManager::GetListSelection(const std::string& id_str) {
+    UIID id = GetScopedID(id_str);
+
     auto it = listStates.find(id);
-    return (it != listStates.end()) ? it->second.selectedRow : -1;
+    if (it != listStates.end()) return it->second.selectedRow;
+
+    auto it2 = listBoxStates.find(id);
+    if (it2 != listBoxStates.end()) return it2->second.selectedRow;
+
+    return -1;
 }
 
-void DebugInterfaceManager::ClearListSelection(const std::string& id_str) {
-    UIID id = GetID(id_str);
-    listStates[id].selectedRow = -1;
+void UIManager::ClearListSelection(const std::string& id_str) {
+    UIID id = GetScopedID(id_str);
+
+    auto it = listStates.find(id);
+    if (it != listStates.end()) { it->second.selectedRow = -1; return; }
+
+    auto it2 = listBoxStates.find(id);
+    if (it2 != listBoxStates.end()) it2->second.selectedRow = -1;
 }
 
-void DebugInterfaceManager::ScrollListToBottom(const std::string& id_str,
-                                               const std::vector<ListRow>& rows,
-                                               int viewportHeight, int rowHeight)
+void UIManager::ScrollListToBottom(const std::string& id_str,
+                                   int rows,
+                                   int viewportHeight, int rowHeight)
 {
-    UIID id = GetID(id_str);
-    int totalH   = (int)rows.size() * rowHeight;
-    int maxScroll = std::max(0, totalH - viewportHeight);
-    listStates[id].scrollOffsetY = maxScroll;
+    UIID id       = GetScopedID(id_str);
+    int  totalH   = rows * rowHeight;
+    int  maxScroll = std::max(0, totalH - viewportHeight);
+
+    auto it = listStates.find(id);
+    if (it != listStates.end()) { it->second.scrollOffsetY = maxScroll; return; }
+
+    auto it2 = listBoxStates.find(id);
+    if (it2 != listBoxStates.end()) it2->second.scrollOffsetY = maxScroll;
 }
 
-// ---------------------------------------------------------------------------
-// Panel
-// ---------------------------------------------------------------------------
-
-int DebugInterfaceManager::BeginPanel(int x, int y, int width, int height,
-                                      Color bg, int paddingX, int paddingY)
+bool UIManager::TreeNode(const std::string& id_str,
+                         const std::string& label, bool &clicked, bool Selected,
+                         int width,
+                         int height)
 {
-    renderer->FillRect(x, y, width, height, bg);
-    renderer->DrawRect(x, y, width, height, Color{55, 57, 60});
-    SetCursor(x + paddingX, y + paddingY);
-    maxRowHeight = 0;
-    return width - paddingX * 2;
+    if (height < 0)
+        height = style.Vars.DefaultItemHeight;
+
+    UIID id = GetScopedID(id_str);
+    auto& state = treeNodeStates[id];
+
+    state.id = id;
+
+    auto& lc = Layout();
+
+    if (width <= 0) {
+        width = (lc.contentW > 0)
+            ? (lc.contentW - (lc.cursorX - lc.originX))
+            : 200;
+    }
+
+    int x = lc.cursorX;
+    int y = lc.cursorY;
+
+    bool hovered = IsMouseOver(x + 14, y, width - 14, height);
+
+    if (hovered) {
+        mouseOverAnyWidget = true;
+        hotID = id;
+
+        if (IsMouseClicked())
+        {
+
+            activeID = id;
+        }
+    }
+
+    clicked =
+        (hotID == id &&
+         activeID == id &&
+         IsMouseClicked());
+
+    if (IsMouseOver(x, y, 14, height) && IsMouseClicked())
+        state.expanded = !state.expanded;
+
+    // ---------------------------------------------------------
+    // background
+    // ---------------------------------------------------------
+    if (Selected) {
+        renderer->FillRect(
+            x,
+            y,
+            width,
+            height,
+            style.Colors.ListRowSelected
+        );
+    }
+    else if (hovered) {
+        renderer->FillRect(
+            x,
+            y,
+            width,
+            height,
+            style.Colors.ListRowHover
+        );
+    }
+
+    // ---------------------------------------------------------
+    // disclosure triangle
+    // ---------------------------------------------------------
+    int arrowX = x + 4;
+    int arrowY = y + height / 2;
+
+    Color arrowColor = style.Colors.Text;
+
+    if (state.expanded) {
+        // ▼
+        renderer->DrawLine(
+            arrowX,
+            arrowY - 2,
+            arrowX + 8,
+            arrowY - 2,
+            arrowColor
+        );
+
+        renderer->DrawLine(
+            arrowX + 1,
+            arrowY - 1,
+            arrowX + 7,
+            arrowY - 1,
+            arrowColor
+        );
+
+        renderer->DrawLine(
+            arrowX + 2,
+            arrowY,
+            arrowX + 6,
+            arrowY,
+            arrowColor
+        );
+    }
+    else {
+        // ▶
+        renderer->DrawLine(
+            arrowX,
+            arrowY - 4,
+            arrowX,
+            arrowY + 4,
+            arrowColor
+        );
+
+        renderer->DrawLine(
+            arrowX + 1,
+            arrowY - 3,
+            arrowX + 1,
+            arrowY + 3,
+            arrowColor
+        );
+
+        renderer->DrawLine(
+            arrowX + 2,
+            arrowY - 2,
+            arrowX + 2,
+            arrowY + 2,
+            arrowColor
+        );
+    }
+
+    // ---------------------------------------------------------
+    // label
+    // ---------------------------------------------------------
+    DrawTextInternal(
+        label,
+        x + 18,
+        y + (height / 2) + 5,
+        style.Colors.Text,
+        width - 18
+    );
+
+    AdvanceCursor(width, height);
+
+    // ---------------------------------------------------------
+    // indent children automatically
+    // ---------------------------------------------------------
+    if (state.expanded)
+        Indent(style.Vars.TreeNodeSpacingX);
+
+    return state.expanded;
 }
 
-void DebugInterfaceManager::EndPanel() {
-    // Reserved for future auto-pop behaviour
+// -----------------------------------------------------------------------------
+// UIManager::TreePop
+// -----------------------------------------------------------------------------
+void UIManager::TreePop(const std::string& id_str)
+{
+    UIID id = GetScopedID(id_str);
+
+    auto it = treeNodeStates.find(id);
+
+    if (it == treeNodeStates.end())
+        return;
+
+    if (it->second.expanded)
+        Unindent(style.Vars.TreeNodeSpacingX);
+}
+
+bool UIManager::IsTreeOpen(const std::string &id_str) const {
+    UIID id = GetScopedID(id_str);
+    auto it = treeNodeStates.find(id);
+    if (it == treeNodeStates.end())
+        return false;
+    return it->second.expanded;
+}
+
+WidgetResult UIManager::ProgressBar(
+    float t,
+    int width,
+    int height)
+{
+    auto& lc = Layout();
+    int x = lc.cursorX;
+    int y = lc.cursorY;
+
+    t = std::clamp(t, 0.0f, 1.0f);
+
+    FillRectRound(
+        x, y,
+        width, height,
+        style.Vars.ButtonRounding,
+        style.Colors.InputBg,
+        Corner_All);
+
+    FillRectRound(
+        x, y,
+        (int)(width * t), height,
+        style.Vars.ButtonRounding,
+        style.Colors.TabAccent,
+        Corner_All);
+
+    AdvanceCursor(width, height);
+
+    WidgetResult r;
+    r.hovered = IsMouseOver(x, y, width, height);
+    return r;
 }

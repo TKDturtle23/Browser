@@ -70,6 +70,9 @@ struct Event {
     Key key = Key::Unknown;       // Virtual Key Code (e.g., VK_ESCAPE, VK_SPACE)
 
 };
+struct DragZone {
+    int x, y, width, height;
+};
 class Platform {
 public:
     virtual ~Platform() = default;
@@ -77,7 +80,7 @@ public:
     virtual bool OpenWindow(
         int width,
         int height,
-        const char* title
+        const char* title, bool PrimaryWindow // Primary window needs to be the last window to close
     ) = 0;
 
     virtual void CloseWindow() = 0;
@@ -89,13 +92,16 @@ public:
     virtual bool PollEvent(
         Event& event
     ) = 0;
-
+    virtual void SetTopBarHeight(DragZone pixels) = 0;
     virtual int GetWidth() const = 0;
 
     virtual int GetHeight() const = 0;
 
     virtual bool IsRunning() const = 0;
 
+    virtual void MinimizeWindow() = 0;
+    virtual bool Is_WindowZoomed() const = 0;
+    virtual void MaximizeOrRestoreWindow() = 0;
     bool resizing = false;
     bool needsRedraw = false;
     std::function<void()> onRender;

@@ -5,14 +5,17 @@
 #ifndef BROWSER_VIEWPORTMANAGER_H
 #define BROWSER_VIEWPORTMANAGER_H
 #include "../BrowserCacheManager.h"
-#include "../Layout/LayoutRenderer.h"
+#include "../Layout/LayoutGenerator.h"
 #include "../Render/Renderer.h"
 #include "JavaScriptEngine/JavaScriptEngine.h"
+#include "Layout/LayoutRenderer.h"
 
 
 class ViewportManager {
 public:
-    ViewportManager(int width, int height, JavaScriptEngine& engine);
+
+    ViewportManager(int width, int height, JavaScriptEngine &engine, Font &fallbackFont);
+
     ~ViewportManager();
 
 
@@ -47,9 +50,10 @@ private:
     Renderer renderer;
     Tokenizer tokenizer;
     Parser parser;
-    LayoutRenderer layout;
+    LayoutGenerator layout;
     BrowserCacheManager cache;
     JavaScriptEngine& engine;
+    LayoutRenderer layoutRenderer;
     Node dom;
 };
 

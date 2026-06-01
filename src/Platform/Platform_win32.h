@@ -17,7 +17,7 @@ public:
     bool OpenWindow(
         int width,
         int height,
-        const char* title
+        const char* title, bool PrimaryWindow
     ) override;
 
     void CloseWindow() override;
@@ -29,14 +29,20 @@ public:
     bool PollEvent(
         Event& event
     ) override;
-
+    void SetTopBarHeight(DragZone pixels) override { topBarHeight = pixels;};
     int GetWidth() const override;
     int GetHeight() const override;
 
     bool IsRunning() const override;
     void SetMinimumSize(int width, int height) override;
 
+    void MinimizeWindow() override;
+
+    void MaximizeOrRestoreWindow() override;
+    bool Is_WindowZoomed() const override;
 public:
+    bool Primary =false;
+    DragZone topBarHeight{};
     bool pendingResize = false;
     bool running = false;
 

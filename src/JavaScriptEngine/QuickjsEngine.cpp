@@ -10,7 +10,7 @@
 #include <fstream>
 
 #include "JS_Functions.h"
-#include "Logger.h"
+#include "../Debug/Logger.h"
 
 
 extern "C" {
@@ -46,6 +46,8 @@ QuickjsEngine::QuickjsEngine() {
 
     // Initialize core system level handlers globally once for the runtime
     js_std_init_handlers(impl->rt);
+
+    register_node_class();
 }
 QuickjsEngine::~QuickjsEngine() {
     // 1. Explicitly clear allocated C++ lambda tracking data blocks
@@ -55,7 +57,10 @@ QuickjsEngine::~QuickjsEngine() {
     m_allocated_callbacks.clear();
     g_callback_registry.clear();
 
-    // 2. Loop through the tracking list container and free every active tab context safely
+    // 2. STOP system handlers first while contexts are still alive
+    js_std_free_handlers(impl->rt);
+
+    // 3. Loop through the tracking list container and free contexts safely
     for (JSContext* ctx : impl->allocated_contexts) {
         if (ctx) {
             JS_FreeContext(ctx);
@@ -63,8 +68,7 @@ QuickjsEngine::~QuickjsEngine() {
     }
     impl->allocated_contexts.clear();
 
-    // 3. Complete system level deallocation teardown
-    js_std_free_handlers(impl->rt);
+    // 4. Finally, destroy the core runtime
     JS_FreeRuntime(impl->rt);
 }
 JSContext* QuickjsEngine::create_tab_context() {
@@ -106,7 +110,7 @@ JSContext* QuickjsEngine::create_tab_context() {
     // Default to setting this context as active if none is currently selected
 
         impl->active_ctx = ctx;
-    register_node_class();
+
 
     initialize_dom_bridge();
     initialize_console();

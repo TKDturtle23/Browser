@@ -8,7 +8,7 @@
 #include <sstream>
 #include <string>
 
-#include "Logger.h"
+#include "../Debug/Logger.h"
 #include "quickjs.h"
 #include "QuickjsEngine.h"
 

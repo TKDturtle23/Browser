@@ -39,7 +39,7 @@ private:
     std::unique_ptr<Platform> platform;
 
     std::function<void()> OnRender;
-    DebugInterfaceManager ui_manager;
+    UIManager ui_manager;
 
     std::string currentTabUrl = "localhost:8080";
     bool isTabActive = true;
@@ -48,6 +48,21 @@ private:
     size_t activeTabIndex = 0; // Tracks which tab is selected
     JavaScriptEngine jsEngine;
     std::unique_ptr<DebugWindowManager> debugWindow;
+
+
+    UI_Image minimize;
+
+    UI_Image maximize;
+    UI_Image Return; // return from maximize
+
+    UI_Image close;
+    UI_Image reload;
+    UI_Image forward;
+    UI_Image back;
+
+    UI_Image plus;
+
+    Font fallbackFont;
 };
 
 

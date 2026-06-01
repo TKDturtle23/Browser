@@ -6,7 +6,7 @@
 #include <functional>
 
 #include "UI/InterfaceManager.h"
-#include "Logger.h"
+#include "../Debug/Logger.h"
 #include "JavaScriptEngine/JavaScriptEngine.h"
 #include "CurlGrabber.h"
 // Forward declarations
@@ -25,7 +25,22 @@ struct DebugLogEntry {
     int           indent   = 0;
 };
 
+struct DebugListRow {
+    std::string text;
+    std::string annotation;
+    std::string badgeLabel;
 
+    Color badgeColor  = {60,60,60,255};
+    Color badgeText   = {255,255,255,255};
+
+    bool  hasTint     = false;
+    Color rowTint     = {0,0,0,0};
+
+    bool  isCollapsed = false;
+    int   indentLevel = 0;
+
+    Color textColor   = {220,220,220,255};
+};
 // ---------------------------------------------------------------------------
 // DebugWindowManager
 //
@@ -67,25 +82,29 @@ public:
     // Returns false if the window was closed by the user (so caller can set isOpen = false).
     bool Render();
 
+    const Node *GetSelectedNode();
+    bool Redraw();
+    bool NeedsClosing() { return NeedsClose;}
 private:
+    bool NeedsClose = false;
+    bool redrawView = false;
     JavaScriptEngine *jsEngine;
     // --- Internal tab renderers ---------------------------------------------
     void RenderConsoleTab (int panelX, int panelY, int panelW, int panelH);
     void RenderNetworkTab (int panelX, int panelY, int panelW, int panelH);
+
+    void RenderInspectorTreeNode(const Node *node, int treeW);
+
     void RenderInspectorTab(int panelX, int panelY, int panelW, int panelH);
+    const Node* selectedNode = nullptr;
 
-    // Recursively flattens the DOM tree into inspectorRows / inspectorNodes.
-    void FlattenDOM(const Node *node, int depth, bool Root);
-
-    // Builds a ListRow for a single DOM node at a given indent depth.
-    ListRow MakeNodeRow(const Node *node, int depth, bool &ChildrenHandled) const;
 
     // Builds style rows for the currently selected inspector node.
     void BuildStyleRows();
 
     // --- Platform & UI ------------------------------------------------------
-    std::unique_ptr<Platform>             platform;
-    std::unique_ptr<DebugInterfaceManager> ui;
+    std::unique_ptr<Platform>  platform;
+    std::unique_ptr<UIManager> ui;
     std::string jsBuffer = "";
     int windowWidth;
     int windowHeight;
@@ -99,7 +118,7 @@ private:
 
     // --- Console state ------------------------------------------------------
     std::vector<DebugLogEntry> logEntries;
-    std::vector<ListRow>       consoleRows;   // rebuilt when logEntries changes
+    std::vector<DebugListRow>       consoleRows;   // rebuilt when logEntries changes
     bool   consoleAutoScroll    = true;
     bool   showLogs             = true;
     bool   showWarns            = true;
@@ -111,19 +130,23 @@ private:
 
     // --- Network state ------------------------------------------------------
     std::vector<DebugNetEntry> netEntries;
-    std::vector<ListRow>       networkRows;
+    std::vector<DebugListRow>       networkRows;
     bool networkRowsDirty = true;
 
     void RebuildNetworkRows();
 
     // --- Inspector state ----------------------------------------------------
     const Node*           domRoot = nullptr;
-    std::vector<ListRow>  inspectorRows;
+    std::vector<DebugListRow>  inspectorRows;
     std::vector<const Node*> inspectorNodes;   // parallel to inspectorRows
     bool                  inspectorDirty = true;
 
-    std::vector<ListRow>  styleRows;
-    const Node*           selectedNode = nullptr;
+    std::vector<DebugListRow>  styleRows;
 
     void RebuildInspectorRows();
+
+    UI_Image minimize;
+
+    UI_Image maximize;
+    UI_Image Return; // return from maximize
 };

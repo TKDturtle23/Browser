@@ -15,6 +15,8 @@ struct CSSSelector {
     // pseudo-class is stripped and ignored for now
 };
 
+
+
 struct CSSRule {
     std::vector<CSSSelector> selectors; // comma-separated selectors share one block
     std::vector<CSSDeclaration> declarations;

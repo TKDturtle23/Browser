@@ -1,38 +1,35 @@
 #include "CSSTokenizer.h"
 #include <cctype>
 #include <algorithm>
+#include <string_view>
 
-// Added isInlineStyle parameter to dynamically bypass brace rules
 std::vector<CSSToken> CSSTokenizer::Tokenize(const std::string& css, bool isInlineStyle) {
     std::vector<CSSToken> tokens;
-    size_t i = 0;
 
-    // If it's an inline style string, we are already logically "inside a block"
+    // Speculatively reserve space to avoid repeated vector reallocations
+    tokens.reserve(css.size() / 10);
+
+    size_t i = 0;
+    size_t len = css.size();
     bool inBlock = isInlineStyle;
 
-    // Robust trimming helper to clear whitespaces safely
-    auto cleanString = [](const std::string& str) {
-        size_t first = str.find_first_not_of(" \t\n\r");
-        if (first == std::string::npos) return std::string{};
-        size_t last = str.find_last_not_of(" \t\n\r");
-        return str.substr(first, (last - first + 1));
+    // Fast, zero-allocation whitespace trimmer using string_view
+    auto cleanStringView = [](std::string_view sv) -> std::string_view {
+        size_t first = sv.find_first_not_of(" \t\n\r");
+        if (first == std::string_view::npos) return {};
+        size_t last = sv.find_last_not_of(" \t\n\r");
+        return sv.substr(first, (last - first + 1));
     };
 
     auto skipWhitespace = [&]() {
-        while (i < css.size() && std::isspace((unsigned char)css[i])) i++;
-    };
-
-    auto readUntil = [&](const std::string& stopChars) {
-        std::string out;
-        while (i < css.size() && stopChars.find(css[i]) == std::string::npos) {
-            out += css[i++];
+        while (i < len && std::isspace(static_cast<unsigned char>(css[i]))) {
+            i++;
         }
-        return cleanString(out);
     };
 
-    while (i < css.size()) {
+    while (i < len) {
         skipWhitespace();
-        if (i >= css.size()) break;
+        if (i >= len) break;
 
         char c = css[i];
 
@@ -45,13 +42,17 @@ std::vector<CSSToken> CSSTokenizer::Tokenize(const std::string& css, bool isInli
                 tokens.push_back({ CSSTokenType::Comma, "," });
                 i++;
             } else {
-                std::string sel = readUntil("{,");
+                // Read Selector quickly using a scan loop
+                size_t start = i;
+                while (i < len && css[i] != '{' && css[i] != ',') {
+                    i++;
+                }
+                std::string_view sel = cleanStringView(std::string_view(css).substr(start, i - start));
                 if (!sel.empty()) {
-                    tokens.push_back({ CSSTokenType::Selector, sel });
+                    tokens.push_back({ CSSTokenType::Selector, std::string(sel) });
                 }
             }
         } else {
-            // If parsing standard stylesheets, look out for closing braces
             if (!isInlineStyle && c == '}') {
                 tokens.push_back({ CSSTokenType::CloseBrace, "}" });
                 inBlock = false;
@@ -61,23 +62,30 @@ std::vector<CSSToken> CSSTokenizer::Tokenize(const std::string& css, bool isInli
                 i++;
             } else {
                 // Read Property Name
-                std::string prop = readUntil(":;}");
+                size_t propStart = i;
+                while (i < len && css[i] != ':' && css[i] != ';' && css[i] != '}') {
+                    i++;
+                }
+                std::string_view prop = cleanStringView(std::string_view(css).substr(propStart, i - propStart));
 
                 skipWhitespace();
-                if (i < css.size() && css[i] == ':') {
+                if (i < len && css[i] == ':') {
                     i++; // Skip the colon splitter
                     skipWhitespace();
 
                     // Read Value
-                    std::string val = readUntil(";;}"); // Stops cleanly at semicolon or brace end
+                    size_t valStart = i;
+                    while (i < len && css[i] != ';' && css[i] != '}') {
+                        i++;
+                    }
+                    std::string_view val = cleanStringView(std::string_view(css).substr(valStart, i - valStart));
 
                     if (!prop.empty() && !val.empty()) {
-                        tokens.push_back({ CSSTokenType::Property, prop });
-                        tokens.push_back({ CSSTokenType::Value,    val  });
+                        tokens.push_back({ CSSTokenType::Property, std::string(prop) });
+                        tokens.push_back({ CSSTokenType::Value,    std::string(val)  });
                     }
                 } else if (!prop.empty()) {
-                    // Safety Fallback: advance step to prevent infinite loops on malformed CSS syntax
-                    i++;
+                    i++; // Safety Fallback
                 }
             }
         }

@@ -1,95 +1,33 @@
 //
-// Created by tkdtu on 5/27/2026.
+// Created by tkdtu on 5/31/2026.
 //
 
 #ifndef BROWSER_LAYOUTRENDERER_H
 #define BROWSER_LAYOUTRENDERER_H
-#include "../Render/Renderer.h"
-#include "../Parser.h"
-#include "../Text/Font.h"
+#include "LayoutHelper.h"
+#include "Render/Renderer.h"
 
-enum class BoxKind {
-    Block,
-    Line,
-    TextRun,
-};
 
-struct LayoutBox {
-    BoxKind kind = BoxKind::Block;
 
-    int x = 0;
-    int y = 0;
-    int width = 0;
-    int height = 0;
-    int fontSize = 0; // for TextRun boxes
-
-    int lineAscent = 0;
-    int lineDescent = 0;
-
-    const Node* node = nullptr;
-
-    // Only used when kind == TextRun.
-    std::string text;
-
-    std::vector<LayoutBox> children;
-};
-
-// ---------------------------------------------------------------------------
-//  FormattingContext — one subclass per layout model
-//
-//  To add a new model (flex, grid, …) subclass this and implement Layout().
-//  LayoutBlock() picks the right context based on the node's computed style.
-// ---------------------------------------------------------------------------
-class FormattingContext {
-public:
-    virtual ~FormattingContext() = default;
-
-    // Lay out all children of `node` starting at (contentX, contentY) inside
-    // a content area of `contentWidth` pixels.  Appends child boxes into
-    // `parent` and returns the Y coordinate just below the last child.
-    virtual int Layout(const Node& node,
-                       LayoutBox& parent,
-                       int contentX,
-                       int contentY,
-                       int contentWidth) = 0;
-};
-
-// ---------------------------------------------------------------------------
-//  LayoutRenderer
-// ---------------------------------------------------------------------------
 class LayoutRenderer {
 public:
+    explicit LayoutRenderer(Renderer& renderer, Font& FallbackFont);
+
+    Font &ResolveFont(const Style &s);
+
     FontMetrics PrepareFontContext(const Style &s, int forcedSize, Font *&outFont);
 
-    explicit LayoutRenderer(Renderer& renderer);
 
-    // Full layout + render pass driven by the DOM root.
-    void Update(const Node& dom);
-    void Render(const LayoutBox &box);
-    void Render();
-    // Public so FormattingContext subclasses can reuse them.
-    Font& ResolveFont(const Style& s);
 
-    Font BaseFont;
-    Font BaseItalicFont;
-    Font BaseBoldFont;
-    Font BaseBoldItalicFont;
-    // Lay out a single block-level node.  Delegates child layout to the
-    // appropriate FormattingContext.
-    LayoutBox LayoutBlock(const Node& node,
-                          int containerX,
-                          int containerY,
-                          int containerWidth);
+    void RenderRoot(const LayoutBox& root);
+    void UpdateDom(Node *dom);
+    void AddFont(std::string name, FontGroup& group);
 private:
-    Renderer& renderer;
-    LayoutBox root;
+    void Render(const LayoutBox &box);
 
-    // --- layout helpers ---
-
-
-
-    // --- render helpers ---
     void RenderBox(const LayoutBox& box);
+
+    static bool IsImageBox(const LayoutBox &box);
 
     void RenderImage(const LayoutBox &box) const;
 
@@ -103,9 +41,13 @@ private:
         TextDecorationStyle style,
         Color color, int startX, int y, int thickness, int endX);
 
-    // Searches the layout tree for the first node with a background color and
-    // uses it as the window clear color.
-    Color FindWindowBackground() const;
+
+private:
+    Node *Dom{};
+    Node *Body{};
+    Renderer& renderer;
+    std::unordered_map<std::string, std::reference_wrapper<FontGroup>> Fonts;
+    Font &criticalFallbackFont;
 };
 
 

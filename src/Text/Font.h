@@ -26,11 +26,13 @@ public:
     Font(const std::string& path, int pixelSize);
     ~Font();
 
-    const Glyph& GetGlyph(char c);
-    int GetLineHeight() const;
-    FT_Vector GetKerning(char c, char prev_char);
 
-    FontMetrics GetMetrics(); // REQUIRED
+
+    const Glyph& GetGlyph(char c) const;
+    int GetLineHeight() const;
+    FT_Vector GetKerning(char c, char prev_char) const;
+
+    FontMetrics GetMetrics() const; // REQUIRED
     void SetSize(int pixelSize);
     int GetCurrentSize() const { return currentSize; }
 
@@ -39,9 +41,9 @@ private:
     FT_Library ft;
     FT_Face face;
 
-    std::unordered_map<char, Glyph> cache;
+    mutable std::unordered_map<char, Glyph> cache;
 
-    void LoadGlyph(char c);
 
+    void LoadGlyph(char c) const;
 
 };

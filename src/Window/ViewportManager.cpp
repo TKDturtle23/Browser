@@ -17,9 +17,11 @@
 #include "../Parser.h"
 #include "../Tokenizer.h"
 #include "../CSS/CSSParser.h"
-#include "../Layout/LayoutRenderer.h"
+#include "../Layout/LayoutGenerator.h"
 
 #include "ImageViewer.h"
+#include "Debug/Logger.h"
+#include "Debug/Timer.h"
 #include "Images/SvgViewer.h"
 #include "JavaScriptEngine/JavaScriptEngine.h"
 #include "JavaScriptEngine/JS_Functions.h"
@@ -76,11 +78,11 @@ static std::string ResolveUrl(const std::string& baseUrl, const std::string& rel
 
     return protocol + "://" + host + dir + relUrl;
 }
-ViewportManager::ViewportManager(const int width, const int height, JavaScriptEngine& engine) : renderer(width, height),
+ViewportManager::ViewportManager(const int width, const int height, JavaScriptEngine& engine, Font& fallbackFont) : renderer(width, height),
                                                                       layout(renderer),
                                                                       cache(
                                                                           std::filesystem::current_path().string() +
-                                                                          "/cache"), dom(), engine(engine) {
+                                                                          "/cache"), dom(), engine(engine), layoutRenderer(renderer, fallbackFont) {
     tabContext = engine.create_tab_context();
 
 }
@@ -112,19 +114,26 @@ void ViewportManager::Init() {
     CurlGrabber::Init();
     std::filesystem::create_directories(std::filesystem::current_path().string() + "/cache");
 
-
-
     std::string response = cache.GetResource(CurrentLink);
 
-
+    Timer Token_Timer;
+    Token_Timer.StartTimer();
     auto tokens = tokenizer.tokenize(response);
+    Token_Timer.StopTimer();
+    Logger::Log_Verbose("Tokenizing took %f milliseconds", "ViewportManager", 0, Token_Timer.GetElapsedMilliseconds());
     // parse once
-
+    Timer Parser_Timer;
+    Parser_Timer.StartTimer();
     dom = parser.Parse(tokens); // no renderer dependency here
+    Parser_Timer.StopTimer();
+    Logger::Log_Verbose("Parsing took %f milliseconds", "ViewportManager", 0, Parser_Timer.GetElapsedMilliseconds());
     FindTitle();
 
-
+    Timer Layout_Timer;
+    Layout_Timer.StartTimer();
     ApplyAndLayout();
+    Layout_Timer.StopTimer();
+    Logger::Log_Verbose("Layout took %f milliseconds", "ViewportManager", 0, Layout_Timer.GetElapsedMilliseconds());
 }
 
 void ViewportManager::SetLink(const std::string &Link) {
@@ -172,11 +181,12 @@ void ViewportManager::Step() {
     JavascriptFunctions::SetNewContext({&dom, });
     // Tell the engine to target this specific tab's runtime context before pumping events
     engine.set_active_context(tabContext);
+    // ReSharper disable once CppExpressionWithoutSideEffects
     engine.Step();
 }
 std::vector<Color> ViewportManager::Render() {
 
-    layout.Render();
+    layoutRenderer.RenderRoot(layout.GetRoot());
     renderer.Present();
     return renderer.GetFrontBuffer();
 }
@@ -186,7 +196,6 @@ void LoadImageResourceSync(Node& imgNode, const std::string& absoluteUrl, Browse
     auto imgData = std::make_shared<ImageData>();
     imgNode.imageData = imgData;
 
-    std::cout << "[Pipeline] Synchronously fetching: " << absoluteUrl << std::endl;
 
     // 2. Grab raw web data
     std::string webData = cache.GetResource(absoluteUrl);
@@ -195,7 +204,7 @@ void LoadImageResourceSync(Node& imgNode, const std::string& absoluteUrl, Browse
         return;
     }
 
-    // 3. Save to local disk cache
+    // 3. Save to the local disk cache
     std::string localFilePath = ConvertUrlToCachePath(absoluteUrl);
     std::ofstream outFile(localFilePath, std::ios::binary);
     if (!outFile) {
@@ -255,13 +264,19 @@ void LoadImageResourceSync(Node& imgNode, const std::string& absoluteUrl, Browse
 
     // Mark as ready. Since we're single-threaded, it's 100% ready before layout.Update runs.
     imgData->isLoaded = true;
-    std::cout << "[Pipeline] Image ready inline: " << width << "x" << height << std::endl;
 }
 void ViewportManager::ApplyAndLayout() {
     JavascriptFunctions::SetNewContext({&dom, &title});
-    // re-apply CSS with current viewport size
+
     CSSParser cssParser;
     std::vector<CSSRule> rules;
+
+    // ==========================================
+    // 1. Collect Styles
+    // ==========================================
+    Timer Style_Collect_Timer;
+    Style_Collect_Timer.StartTimer();
+
     std::function<void(Node&)> collectStyles = [&](Node& node) {
         auto it = node.attributes.find("rel");
         if (node.HasAttribute("style") || node.type == NodeType::Element && (node.tag == "style" || (it != node.attributes.end() && it->second == "stylesheet"))) {
@@ -283,7 +298,6 @@ void ViewportManager::ApplyAndLayout() {
                     auto parsed = cssParser.Parse(res, false);
                     rules.insert(rules.end(), parsed.begin(), parsed.end());
                 }
-
             }
             for (auto& child : node.children)
                 if (child->type == NodeType::Text)
@@ -294,16 +308,54 @@ void ViewportManager::ApplyAndLayout() {
             collectStyles(*child);
     };
     collectStyles(dom);
+
+    Style_Collect_Timer.StopTimer();
+    Logger::Log_Verbose("Style Collection took %f milliseconds", "ViewportManager", 1, Style_Collect_Timer.GetElapsedMilliseconds());
+
+    // ==========================================
+    // 2. Reset Styles
+    // ==========================================
+    Timer Style_Reset_Timer;
+    Style_Reset_Timer.StartTimer();
+
     std::function<void(Node&)> resetStyles = [&](Node& node) {
         node.specifiedStyle = Style{};
         for (auto& child : node.children)
             resetStyles(*child);
     };
     resetStyles(dom);
+
+    Style_Reset_Timer.StopTimer();
+    Logger::Log_Verbose("Style Reset took %f milliseconds", "ViewportManager", 1, Style_Reset_Timer.GetElapsedMilliseconds());
+
+    // ==========================================
+    // 3. Apply CSS Rules
+    // ==========================================
+    Timer CSS_Apply_Timer;
+    CSS_Apply_Timer.StartTimer();
+
     cssParser.Apply(rules, dom, renderer.GetWidth(), renderer.GetHeight());
+
+    CSS_Apply_Timer.StopTimer();
+    Logger::Log_Verbose("CSS Rule Application took %f milliseconds", "ViewportManager", 1, CSS_Apply_Timer.GetElapsedMilliseconds());
+
+    // ==========================================
+    // 4. Compute Style
+    // ==========================================
+    Timer Style_Compute_Timer;
+    Style_Compute_Timer.StartTimer();
 
     // re-run style computation with fresh specifiedStyles
     ComputeStyle(dom); // you'll need to expose this from Parser
+
+    Style_Compute_Timer.StopTimer();
+    Logger::Log_Verbose("Style Computation took %f milliseconds", "ViewportManager", 1, Style_Compute_Timer.GetElapsedMilliseconds());
+
+    // ==========================================
+    // 5. Discover and Load Images
+    // ==========================================
+    Timer Image_Load_Timer;
+    Image_Load_Timer.StartTimer();
 
     std::function<void(Node&)> discoverAndLoadImages = [&](Node& node) {
         if (node.type == NodeType::Element && node.tag == "img") {
@@ -322,8 +374,6 @@ void ViewportManager::ApplyAndLayout() {
             if (srcIt != node.attributes.end() && !node.imageData) {
                 std::string absoluteUrl = ResolveUrl(CurrentLink, srcIt->second);
 
-
-
                 // Call your asynchronous asset loader loader (from Step 4 previously)
                 // This instantiates node.imageData immediately so layout doesn't crash
                 LoadImageResourceSync(node, absoluteUrl, cache, width, height);
@@ -333,6 +383,17 @@ void ViewportManager::ApplyAndLayout() {
             discoverAndLoadImages(*child);
         }
     };
+    discoverAndLoadImages(dom);
+
+    Image_Load_Timer.StopTimer();
+    Logger::Log_Verbose("Image Discovery & Sync Loading took %f milliseconds", "ViewportManager", 1, Image_Load_Timer.GetElapsedMilliseconds());
+
+    // ==========================================
+    // 6. Discover Javascript
+    // ==========================================
+    Timer JS_Discovery_Timer;
+    JS_Discovery_Timer.StartTimer();
+
     std::function<void(Node&)> discoverAndRunJavascript = [&](Node& node) {
         if (node.type == NodeType::Element && node.tag == "script") {
             auto srcIt = node.attributes.find("src");
@@ -358,12 +419,22 @@ void ViewportManager::ApplyAndLayout() {
             discoverAndRunJavascript(*child);
         }
     };
-
-    discoverAndLoadImages(dom);
     discoverAndRunJavascript(dom);
+
+    JS_Discovery_Timer.StopTimer();
+    Logger::Log_Verbose("JavaScript Discovery & Setup took %f milliseconds", "ViewportManager", 1, JS_Discovery_Timer.GetElapsedMilliseconds());
+
+    // ==========================================
+    // 7. Layout Compilation
+    // ==========================================
+    Timer Layout_Compilation_Timer;
+    Layout_Compilation_Timer.StartTimer();
+
     layout.Update(dom);
+    layoutRenderer.UpdateDom(&dom);
 
-
+    Layout_Compilation_Timer.StopTimer();
+    Logger::Log_Verbose("Layout Compilation Update took %f milliseconds", "ViewportManager", 1, Layout_Compilation_Timer.GetElapsedMilliseconds());
 }
 
 std::vector<Color> ViewportManager::OnRender(int width, int height) {

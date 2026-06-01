@@ -2,6 +2,7 @@
 #include "CSSTokenizer.h"
 #include <algorithm>
 #include <cctype>
+#include <charconv>
 #include <iostream>
 #include <optional>
 #include <sstream>
@@ -9,15 +10,23 @@
 // ── Selector parsing ────────────────────────────────────────────────────────
 
 // Change parameter to std::string_view
+constexpr uint32_t HashProperty(std::string_view str) {
+    uint32_t hash = 5381;
+    for (char c : str) {
+        hash = ((hash << 5) + hash) + static_cast<uint32_t>(c);
+    }
+    return hash;
+}
+
+// ── Selector parsing ────────────────────────────────────────────────────────
+
 CSSSelector CSSParser::ParseSelector(std::string_view s) {
     CSSSelector sel;
 
-    // strip pseudo-class without copying
     size_t colon = s.find(':');
     if (colon != std::string_view::npos)
         s = s.substr(0, colon);
 
-    // trim without copying
     size_t start = s.find_first_not_of(" \t\n\r");
     if (start == std::string_view::npos) return sel;
     size_t end = s.find_last_not_of(" \t\n\r");
@@ -29,7 +38,7 @@ CSSSelector CSSParser::ParseSelector(std::string_view s) {
             i++;
             size_t j = i;
             while (j < s.size() && s[j] != '.' && s[j] != '#') j++;
-            sel.id = s.substr(i, j - i); // If sel.id must be std::string, it copies here, which is fine.
+            sel.id = s.substr(i, j - i);
             i = j;
         } else if (s[i] == '.') {
             i++;
@@ -67,14 +76,10 @@ std::vector<CSSRule> CSSParser::Parse(const std::string& css, bool isInlineStyle
 
     std::vector<CSSRule> rules;
     CSSRule current;
-
-    // FIX 1: Initialize block tracking context directly from the configuration
     bool inBlock = isInlineStyle;
 
-    // If it's an inline style, inject a universal wild-card selector so it matches
-    // whatever element it belongs to automatically
     if (isInlineStyle) {
-        CSSSelector universalSelector; // empty tag/id/class matches contextually
+        CSSSelector universalSelector;
         current.selectors.push_back(universalSelector);
     }
 
@@ -85,37 +90,28 @@ std::vector<CSSRule> CSSParser::Parse(const std::string& css, bool isInlineStyle
             case CSSTokenType::Selector:
                 current.selectors.push_back(ParseSelector(tok.value));
                 break;
-
             case CSSTokenType::Comma:
                 break;
-
             case CSSTokenType::OpenBrace:
                 inBlock = true;
                 break;
-
             case CSSTokenType::CloseBrace:
                 if (!current.selectors.empty() && !current.declarations.empty())
                     rules.push_back(current);
                 current = {};
                 inBlock = false;
                 break;
-
             case CSSTokenType::Property:
-                if (inBlock && i + 1 < tokens.size()
-                    && tokens[i + 1].type == CSSTokenType::Value)
-                {
+                if (inBlock && i + 1 < tokens.size() && tokens[i + 1].type == CSSTokenType::Value) {
                     current.declarations.push_back({ tok.value, tokens[i + 1].value });
-                    i++; // consume value token
+                    i++;
                 }
                 break;
-
             default:
                 break;
         }
     }
 
-    // FIX 2: If we are handling an inline style string block, there's no closing brace '}'.
-    // We flush out whatever declarations were gathered directly into our rule list.
     if (isInlineStyle && !current.declarations.empty()) {
         rules.push_back(current);
     }
@@ -127,9 +123,10 @@ std::vector<CSSRule> CSSParser::Parse(const std::string& css, bool isInlineStyle
 
 bool CSSParser::Matches(const CSSSelector& sel, const Node& node) {
     if (node.type != NodeType::Element) return false;
-
     if (!sel.tag.empty() && sel.tag != node.tag) return false;
 
+    // OPTIMIZATION: If your DOM parser extracts 'id' and 'class' fields into
+    // the Node structure directly, use those instead of map lookups!
     if (!sel.id.empty()) {
         auto it = node.attributes.find("id");
         if (it == node.attributes.end() || it->second != sel.id) return false;
@@ -165,57 +162,57 @@ bool CSSParser::Matches(const CSSSelector& sel, const Node& node) {
 }
 
 
-
-
 static std::string Trim(const std::string& str) {
     auto start = std::find_if_not(str.begin(), str.end(), [](unsigned char ch) { return std::isspace(ch); });
     auto end = std::find_if_not(str.rbegin(), str.rend(), [](unsigned char ch) { return std::isspace(ch); }).base();
     return (start < end) ? std::string(start, end) : "";
 }
-static std::optional<CSSLength> ParseCSSLength(const std::string& val, int vw, int vh) {
+// Zero-allocation float parsing helper
+static inline bool FastStringToFloat(std::string_view str, float& value) {
+    auto result = std::from_chars(str.data(), str.data() + str.size(), value);
+    return result.ec == std::errc();
+}
+
+static std::optional<CSSLength> ParseCSSLength(std::string_view val, int vw, int vh) {
     if (val.empty()) return std::nullopt;
     if (val == "auto") return CSSLength{ 0.0f, LengthUnit::Auto };
 
-    try {
-        size_t len = val.size();
+    size_t len = val.size();
+    float num = 0.0f;
 
-        // 1. Check for single-character unit (%) first to avoid substring length confusion
-        if (len > 0 && val.back() == '%') {
-            std::string num_part = val.substr(0, len - 1);
-            if (num_part.empty()) return std::nullopt; // Handles just "%"
-
-            float pct = std::stof(num_part);
-            return CSSLength{ pct, LengthUnit::Percent };
+    if (val.back() == '%') {
+        if (FastStringToFloat(val.substr(0, len - 1), num)) {
+            return CSSLength{ num, LengthUnit::Percent };
         }
-        // 2. Check for 2-character units
-        if (len > 2) {
-            std::string unit = val.substr(len - 2);
-            if (unit == "vw") {
-                float px = (std::stof(val.substr(0, len - 2)) / 100.0f) * vw;
-                return CSSLength{ px, LengthUnit::Px };
-            }
-            if (unit == "vh") {
-                float px = (std::stof(val.substr(0, len - 2)) / 100.0f) * vh;
-                return CSSLength{ px, LengthUnit::Px };
-            }
-            if (unit == "px") {
-                return CSSLength{ std::stof(val.substr(0, len - 2)), LengthUnit::Px };
-            }
-            if (unit == "em") {
-                return CSSLength{ std::stof(val.substr(0, len - 2)), LengthUnit::Em };
-            }
-        }
-
-        // Fallback for raw numbers without unit strings
-        return CSSLength{ std::stof(val), LengthUnit::Px };
-    } catch (...) {
-        return std::nullopt; // Safe fallback on corrupted/unparsed input
+        return std::nullopt;
     }
+
+    if (len > 2) {
+        std::string_view unit = val.substr(len - 2);
+        std::string_view num_part = val.substr(0, len - 2);
+
+        if (unit == "px") {
+            if (FastStringToFloat(num_part, num)) return CSSLength{ num, LengthUnit::Px };
+        } else if (unit == "em") {
+            if (FastStringToFloat(num_part, num)) return CSSLength{ num, LengthUnit::Em };
+        } else if (unit == "vw") {
+            // Note: Handle viewport scale context calculation outside or pass via signature if absolute px transformations are critical here
+            if (FastStringToFloat(num_part, num)) return CSSLength{ num, LengthUnit::Vw };
+        } else if (unit == "vh") {
+            if (FastStringToFloat(num_part, num)) return CSSLength{ num, LengthUnit::Vh };
+        }
+    }
+
+    if (FastStringToFloat(val, num)) {
+        return CSSLength{ num, LengthUnit::Px };
+    }
+
+    return std::nullopt;
 }
-static std::optional<Color> ParseColor(const std::string& val) {
+
+static std::optional<Color> ParseColor(std::string_view val) {
     if (val.empty()) return std::nullopt;
 
-    // #rgb shorthand
     if (val[0] == '#' && val.size() == 4) {
         auto expand = [](char c) -> uint8_t {
             int v = std::isdigit(c) ? c - '0' : std::tolower(c) - 'a' + 10;
@@ -224,56 +221,34 @@ static std::optional<Color> ParseColor(const std::string& val) {
         return Color(expand(val[3]), expand(val[2]), expand(val[1]));
     }
 
-    // #rrggbb
     if (val[0] == '#' && val.size() == 7) {
         auto hex2 = [](char high, char low) -> uint8_t {
             auto h = (high >= 'a') ? (high - 'a' + 10) : ((high >= 'A') ? (high - 'A' + 10) : (high - '0'));
             auto l = (low >= 'a') ? (low - 'a' + 10) : ((low >= 'A') ? (low - 'A' + 10) : (low - '0'));
             return (h << 4) | l;
         };
-        // Expecting #RRGGBB format
         return Color(hex2(val[1], val[2]), hex2(val[3], val[4]), hex2(val[5], val[6]));
     }
 
-    // Named colors
-    if (val == "white") return Color(255, 255, 255); // same either way
-    if (val == "black") return Color(0,   0,   0);   // same either way
-    if (val == "red")   return Color(0,   0,   255); // B=0, G=0, R=255 → stored as BGR
-    if (val == "green") return Color(0,   128, 0);   // same
-    if (val == "blue")  return Color(255, 0,   0);   // B=255 first
-    if (val == "gray" || val == "grey") return Color(128, 128, 128); // same
+    // Fast static string mappings
+    if (val == "white") return Color(255, 255, 255);
+    if (val == "black") return Color(0, 0, 0);
+    if (val == "red")   return Color(0, 0, 255); // BGR implementation preserved
+    if (val == "green") return Color(0, 128, 0);
+    if (val == "blue")  return Color(255, 0, 0);
+    if (val == "gray" || val == "grey") return Color(128, 128, 128);
     if (val == "yellow") return Color(0, 255, 255);
     if (val == "orange") return Color(0, 165, 255);
-    if (val == "cyan") return Color(0, 255, 255);
-    if (val == "magenta") return Color(255, 0, 255);
-    if (val == "purple") return Color(128, 0, 128);
-    if (val == "brown") return Color(139, 69, 19);
-    if (val == "pink") return Color(255, 192, 203);
-    if (val == "lime") return Color(0, 255, 0);
-    if (val == "teal") return Color(0, 128, 128);
-    if (val == "navy") return Color(0, 0, 128);
-    if (val == "olive") return Color(128, 128, 0);
-    if (val == "silver") return Color(192, 192, 192);
-    if (val == "aqua") return Color(0, 255, 255);
-    if (val == "fuchsia") return Color(255, 0, 255);
-    if (val == "maroon") return Color(128, 0, 0);
 
-    return std::nullopt; // Explicit failure instead of falling back to black
+    return std::nullopt;
 }
 
-static std::optional<BorderStyle> ParseBorderStyle(const std::string& val) {
+static std::optional<BorderStyle> ParseBorderStyle(std::string_view val) {
+    if (val == "solid")  return BorderStyle::solid;
+    if (val == "none")   return BorderStyle::none;
     if (val == "dotted") return BorderStyle::dotted;
     if (val == "dashed") return BorderStyle::dashed;
-    if (val == "solid")  return BorderStyle::solid;
-    if (val == "double") return BorderStyle::double_border;
-    if (val == "groove") return BorderStyle::groove;
-    if (val == "ridge")  return BorderStyle::ridge;
-    if (val == "inset")  return BorderStyle::inset;
-    if (val == "outset") return BorderStyle::outset;
-    if (val == "none")   return BorderStyle::none;
-    if (val == "hidden") return BorderStyle::hidden;
-
-    return std::nullopt; // Not a valid border style token
+    return std::nullopt;
 }
 //#define CSS_DEBUG
 #ifdef CSS_DEBUG
@@ -287,28 +262,30 @@ void CSSParser::ApplyDeclarations(const std::vector<CSSDeclaration> &decls,
                                   int vw,
                                   int vh)
 {
+    std::vector<std::string_view> parts;
+    parts.reserve(8); // Avoid reallocation inside layout splits
+
     for (const auto& d : decls)
     {
-        const std::string& p = d.property;
-        const std::string& v = d.value;
+        std::string_view p = d.property;
+        std::string_view v = d.value;
+        parts.clear();
 
         // ── color / background ───────────────────────────────────────────────
-
-        if (p == "background" || p == "background-color")
+        switch (HashProperty(p)) {
+             case HashProperty("background"):
+                case HashProperty("background-color"):
         {
             auto c = ParseColor(v);
             if (!c) CSS_WARN("Failed to parse background color: \"" << v << "\"");
             node.specifiedStyle.set.background = true;
             node.specifiedStyle.hasBackground = true;
             node.specifiedStyle.backgroundColor = c.value_or(Color(0, 0, 0));
-        }
+        }break;
 
         // ── border shorthand ─────────────────────────────────────────────────
-        else if (p == "border") {
-            std::vector<std::string> parts;
-            std::istringstream ss(v);
-            std::string part;
-            while (ss >> part) parts.push_back(part);
+        case HashProperty("border"): {
+            SplitShorthand(v, parts);
 
             for (auto& c : parts) {
                 auto widthVal = ParseCSSLength(c, vw, vh);
@@ -338,14 +315,14 @@ void CSSParser::ApplyDeclarations(const std::vector<CSSDeclaration> &decls,
 
                 CSS_WARN("Unrecognized token in border shorthand: \"" << c << "\"");
             }
-        }
+        }break;
 
         // ── border direction longhands ────────────────────────────────────────
-        else if (p == "border-top" || p == "border-bottom" || p == "border-left" || p == "border-right") {
-            std::vector<std::string> parts;
-            std::istringstream ss(v);
-            std::string part;
-            while (ss >> part) parts.push_back(part);
+        case HashProperty("border-top"):
+            case HashProperty("border-bottom"):
+            case HashProperty("border-left"):
+            case HashProperty("border-right"): {
+            SplitShorthand(v, parts);
 
             auto* b = &node.specifiedStyle.BorderTop;
             if (p == "border-bottom") b = &node.specifiedStyle.BorderBottom;
@@ -361,10 +338,10 @@ void CSSParser::ApplyDeclarations(const std::vector<CSSDeclaration> &decls,
 
                 CSS_WARN("Unrecognized token in " << p << " shorthand: \"" << c << "\"");
             }
-        }
+        }break;
 
         // ── border component longhands ────────────────────────────────────────
-        else if (p == "border-width") {
+        case HashProperty("border-width"): {
             auto w = ParseCSSLength(v, vw, vh);
             if (w.has_value()) {
                 node.specifiedStyle.BorderTop.borderWidth    = w.value();
@@ -374,8 +351,8 @@ void CSSParser::ApplyDeclarations(const std::vector<CSSDeclaration> &decls,
             } else {
                 CSS_WARN("Failed to parse border-width value: \"" << v << "\"");
             }
-        }
-        else if (p == "border-style") {
+        }break;
+        case HashProperty("border-style"): {
             auto s = ParseBorderStyle(v);
             if (!s) CSS_WARN("Failed to parse border-style value: \"" << v << "\"");
             BorderStyle bs = s.value_or(BorderStyle::none);
@@ -383,8 +360,8 @@ void CSSParser::ApplyDeclarations(const std::vector<CSSDeclaration> &decls,
             node.specifiedStyle.BorderBottom.borderStyle = bs;
             node.specifiedStyle.BorderLeft.borderStyle   = bs;
             node.specifiedStyle.BorderRight.borderStyle  = bs;
-        }
-        else if (p == "border-color") {
+        }break;
+        case HashProperty("border-color"): {
             auto c = ParseColor(v);
             if (!c) CSS_WARN("Failed to parse border-color value: \"" << v << "\"");
             Color bc = c.value_or(Color(0,0,0));
@@ -392,18 +369,18 @@ void CSSParser::ApplyDeclarations(const std::vector<CSSDeclaration> &decls,
             node.specifiedStyle.BorderBottom.borderColor = bc;
             node.specifiedStyle.BorderLeft.borderColor   = bc;
             node.specifiedStyle.BorderRight.borderColor  = bc;
-        }
-        else if (p == "color")
+        }break;
+        case HashProperty("color"):
         {
             auto c = ParseColor(v);
             if (!c) CSS_WARN("Failed to parse color value: \"" << v << "\"");
             node.specifiedStyle.set.color = true;
             node.specifiedStyle.color = c.value_or(Color(0,0,0));
-        }
+        }break;
 
         // ── font ─────────────────────────────────────────────────────────────
 
-        else if (p == "font-size")
+        case HashProperty("font-size"):
         {
             auto val = ParseCSSLength(v, vw, vh);
             if (val) {
@@ -412,8 +389,8 @@ void CSSParser::ApplyDeclarations(const std::vector<CSSDeclaration> &decls,
             } else {
                 CSS_WARN("Failed to parse font-size value: \"" << v << "\"");
             }
-        }
-        else if (p == "font-weight")
+        }break;
+        case HashProperty("font-weight"):
         {
             node.specifiedStyle.set.font_bold = true;
             if (v == "bold" || v == "700" || v == "800" || v == "900")
@@ -424,8 +401,8 @@ void CSSParser::ApplyDeclarations(const std::vector<CSSDeclaration> &decls,
                 CSS_WARN("Unrecognized font-weight value: \"" << v << "\" (defaulting to not bold)");
                 node.specifiedStyle.font_bold = false;
             }
-        }
-        else if (p == "font-style")
+        }break;
+        case HashProperty("font-style"):
         {
             node.specifiedStyle.set.font_italic = true;
             if (v == "italic" || v == "oblique")
@@ -436,16 +413,13 @@ void CSSParser::ApplyDeclarations(const std::vector<CSSDeclaration> &decls,
                 CSS_WARN("Unrecognized font-style value: \"" << v << "\" (defaulting to normal)");
                 node.specifiedStyle.font_italic = false;
             }
-        }
+        }break;
 
         // ── margin shorthand ────────────────────────────────────────────────
 
-        else if (p == "margin")
+        case HashProperty("margin"):
         {
-            std::vector<std::string> parts;
-            std::istringstream ss(v);
-            std::string part;
-            while (ss >> part) parts.push_back(part);
+            SplitShorthand(v, parts);
 
             CSSLength defaultLen = {0, LengthUnit::Px};
             CSSLength top = defaultLen, right = defaultLen, bottom = defaultLen, left = defaultLen;
@@ -501,43 +475,40 @@ void CSSParser::ApplyDeclarations(const std::vector<CSSDeclaration> &decls,
             node.specifiedStyle.margin_bottom = bottom;
             node.specifiedStyle.margin_left   = left;
             node.specifiedStyle.margin_right  = right;
-        }
+        }break;
 
         // ── margin longhands ────────────────────────────────────────────────
 
-        else if (p == "margin-top")
+        case HashProperty("margin-top"):
         {
             auto val = ParseCSSLength(v, vw, vh);
             if (val) { node.specifiedStyle.set.margin_top = true; node.specifiedStyle.margin_top = *val; }
             else CSS_WARN("Failed to parse margin-top value: \"" << v << "\"");
-        }
-        else if (p == "margin-bottom")
+        }break;
+        case HashProperty("margin-bottom"):
         {
             auto val = ParseCSSLength(v, vw, vh);
             if (val) { node.specifiedStyle.set.margin_bottom = true; node.specifiedStyle.margin_bottom = *val; }
             else CSS_WARN("Failed to parse margin-bottom value: \"" << v << "\"");
-        }
-        else if (p == "margin-left")
+        }break;
+        case HashProperty("margin-left"):
         {
             auto val = ParseCSSLength(v, vw, vh);
             if (val) { node.specifiedStyle.set.margin_left = true; node.specifiedStyle.margin_left = *val; }
             else CSS_WARN("Failed to parse margin-left value: \"" << v << "\"");
-        }
-        else if (p == "margin-right")
+        }break;
+        case HashProperty("margin-right"):
         {
             auto val = ParseCSSLength(v, vw, vh);
             if (val) { node.specifiedStyle.set.margin_right = true; node.specifiedStyle.margin_right = *val; }
             else CSS_WARN("Failed to parse margin-right value: \"" << v << "\"");
-        }
+        }break;
 
         // ── padding shorthand ─────────────────────────────────────────────────
 
-        else if (p == "padding")
+        case HashProperty("padding"):
         {
-            std::vector<std::string> parts;
-            std::istringstream ss(v);
-            std::string part;
-            while (ss >> part) parts.push_back(part);
+            SplitShorthand(v, parts);
 
             CSSLength defaultLen = {0, LengthUnit::Px};
             CSSLength top = defaultLen, right = defaultLen, bottom = defaultLen, left = defaultLen;
@@ -584,77 +555,78 @@ void CSSParser::ApplyDeclarations(const std::vector<CSSDeclaration> &decls,
             node.specifiedStyle.padding_bottom = bottom;
             node.specifiedStyle.padding_left   = left;
             node.specifiedStyle.padding_right  = right;
-        }
+        }break;
 
         // ── padding longhands ───────────────────────────────────────────────
 
-        else if (p == "padding-top")
+        case HashProperty("padding-top"):
         {
             auto val = ParseCSSLength(v, vw, vh);
             if (val) { node.specifiedStyle.set.padding_top = true; node.specifiedStyle.padding_top = *val; }
             else CSS_WARN("Failed to parse padding-top value: \"" << v << "\"");
-        }
-        else if (p == "padding-bottom")
+        }break;
+        case HashProperty("padding-bottom"):
         {
             auto val = ParseCSSLength(v, vw, vh);
             if (val) { node.specifiedStyle.set.padding_bottom = true; node.specifiedStyle.padding_bottom = *val; }
             else CSS_WARN("Failed to parse padding-bottom value: \"" << v << "\"");
-        }
-        else if (p == "padding-left")
+        }break;
+        case HashProperty("padding-left"):
         {
             auto val = ParseCSSLength(v, vw, vh);
             if (val) { node.specifiedStyle.set.padding_left = true; node.specifiedStyle.padding_left = *val; }
             else CSS_WARN("Failed to parse padding-left value: \"" << v << "\"");
-        }
-        else if (p == "padding-right")
+        }break;
+        case HashProperty("padding-right"):
         {
             auto val = ParseCSSLength(v, vw, vh);
             if (val) { node.specifiedStyle.set.padding_right = true; node.specifiedStyle.padding_right = *val; }
             else CSS_WARN("Failed to parse padding-right value: \"" << v << "\"");
-        }
+        }break;
 
         // ── size ────────────────────────────────────────────────────────────
 
-        else if (p == "width")
+        case HashProperty("width"):
         {
             auto parsed = ParseCSSLength(v, vw, vh);
             if (parsed) { node.specifiedStyle.set.width = true; node.specifiedStyle.width = *parsed; }
             else CSS_WARN("Failed to parse width value: \"" << v << "\"");
-        }
-        else if (p == "min-width")
+        }break;
+        case HashProperty("min-width"):
         {
             auto parsed = ParseCSSLength(v, vw, vh);
             if (parsed) { node.specifiedStyle.set.min_width = true; node.specifiedStyle.min_width = *parsed; }
             else CSS_WARN("Failed to parse min-width value: \"" << v << "\"");
-        }
-        else if (p == "max-width")
+        }break;
+        case HashProperty("max-width"):
         {
             auto parsed = ParseCSSLength(v, vw, vh);
             if (parsed) { node.specifiedStyle.set.max_width = true; node.specifiedStyle.max_width = *parsed; }
             else CSS_WARN("Failed to parse max-width value: \"" << v << "\"");
-        }
-        else if (p == "height")
+        }break;
+        case HashProperty("height"):
         {
             auto parsed = ParseCSSLength(v, vw, vh);
             if (parsed) { node.specifiedStyle.set.height = true; node.specifiedStyle.height = *parsed; }
             else CSS_WARN("Failed to parse height value: \"" << v << "\"");
-        }
-        else if (p == "min-height")
+        }break;
+        case HashProperty("min-height"):
         {
             auto parsed = ParseCSSLength(v, vw, vh);
             if (parsed) { node.specifiedStyle.set.min_height = true; node.specifiedStyle.min_height = *parsed; }
             else CSS_WARN("Failed to parse min-height value: \"" << v << "\"");
-        }
-        else if (p == "max-height")
+        }break;
+        case HashProperty("max-height"):
         {
             auto parsed = ParseCSSLength(v, vw, vh);
             if (parsed) { node.specifiedStyle.set.max_height = true; node.specifiedStyle.max_height = *parsed; }
             else CSS_WARN("Failed to parse max-height value: \"" << v << "\"");
-        }
+
+        }break;
 
         // ── text alignment ────────────────────────────────────────────────
 
-        else if (p == "text-align")
+        case HashProperty("text-align"):
         {
             node.specifiedStyle.set.textAlign = true;
             if (v == "left")
@@ -666,19 +638,16 @@ void CSSParser::ApplyDeclarations(const std::vector<CSSDeclaration> &decls,
             else {
                 CSS_WARN("Unrecognized text-align value: \"" << v << "\" (defaulting to left)");
                 node.specifiedStyle.textAlign = TextAlign::Left;
-            }
+            }break;
         }
 
         // ── text decoration ───────────────────────────────────────────────
 
-        else if (p == "text-decoration")
+        case HashProperty("text-decoration"):
         {
-            std::stringstream ss(v);
-            std::string word;
-            std::vector<std::string> words;
-            while (ss >> word) words.push_back(word);
+            SplitShorthand(v, parts);
 
-            for (const auto& w : words)
+            for (const auto& w : parts)
             {
                 if (w == "underline")
                     node.specifiedStyle.textDecoration = TextDecoration::Underline;
@@ -710,12 +679,12 @@ void CSSParser::ApplyDeclarations(const std::vector<CSSDeclaration> &decls,
                     node.specifiedStyle.TextDecorationColor = *colVal;
                 else
                     CSS_WARN("Unrecognized token in text-decoration: \"" << w << "\"");
-            }
+            }break;
         }
 
         // ── layout ──────────────────────────────────────────────────────────
 
-        else if (p == "display")
+        case HashProperty("display"):
         {
             node.specifiedStyle.set.display = true;
             if (v == "block")
@@ -732,9 +701,9 @@ void CSSParser::ApplyDeclarations(const std::vector<CSSDeclaration> &decls,
             else {
                 CSS_WARN("Unrecognized display value: \"" << v << "\" (defaulting to inline)");
                 node.specifiedStyle.display = DisplayType::Inline;
-            }
+            }break;
         }
-        else if (p == "box-sizing")
+        case HashProperty("box-sizing"):
         {
             node.specifiedStyle.set.boxSizing = true;
             if (v == "border-box")
@@ -743,8 +712,10 @@ void CSSParser::ApplyDeclarations(const std::vector<CSSDeclaration> &decls,
                 node.specifiedStyle.boxSizing = BoxSizing::ContentBox;
             else
                 CSS_WARN("Unrecognized box-sizing value: \"" << v << "\"");
+
+            break;
         }
-        else if (p == "white-space")
+        case HashProperty("white-space"):
         {
             node.specifiedStyle.set.whiteSpace = true;
             if (v == "nowrap")
@@ -754,9 +725,9 @@ void CSSParser::ApplyDeclarations(const std::vector<CSSDeclaration> &decls,
             else {
                 CSS_WARN("Unrecognized white-space value: \"" << v << "\" (defaulting to normal)");
                 node.specifiedStyle.whiteSpace = WhiteSpace::normal;
-            }
+            }break;
         }
-        else if (p == "text-overflow")
+        case HashProperty("text-overflow"):
         {
             node.specifiedStyle.set.textOverflow = true;
             if (v == "ellipsis")
@@ -766,12 +737,12 @@ void CSSParser::ApplyDeclarations(const std::vector<CSSDeclaration> &decls,
             else {
                 CSS_WARN("Unrecognized text-overflow value: \"" << v << "\" (defaulting to clip)");
                 node.specifiedStyle.textOverflow = TextOverflow::Clip;
-            }
+            }break;
         }
 
         // ── images ───────────────────────────────────────────────────────────
 
-        else if (p == "object-fit")
+        case HashProperty("object-fit"):
         {
             node.specifiedStyle.set.objectFit = true;
             if (v == "contain")
@@ -785,9 +756,9 @@ void CSSParser::ApplyDeclarations(const std::vector<CSSDeclaration> &decls,
             else {
                 CSS_WARN("Unrecognized object-fit value: \"" << v << "\" (defaulting to none)");
                 node.specifiedStyle.objectFit = ObjectFit::None;
-            }
+            }break;
         }
-        else if (p == "vertical-align") {
+        case HashProperty("vertical-align"): {
             node.specifiedStyle.set.verticalAlign = true;
             if (v == "baseline")
                 node.specifiedStyle.verticalAlign = VerticalAlign::Baseline;
@@ -809,14 +780,17 @@ void CSSParser::ApplyDeclarations(const std::vector<CSSDeclaration> &decls,
                 node.specifiedStyle.verticalAlign = VerticalAlign::Other;
                 node.specifiedStyle.verticalAlignValue = ParseCSSLength(v, vw, vh).value();
             }
-
+                 break;
         }
         // ── unrecognized ─────────────────────────────────────────────────────
 
-        else
+            default:
         {
             CSS_WARN("Unrecognized CSS property: \"" << p << "\": \"" << v << "\"");
+                 break;
         }
+        }
+
     }
 }
 // ── Tree traversal ───────────────────────────────────────────────────────────

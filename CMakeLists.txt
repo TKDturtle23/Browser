@@ -47,7 +47,7 @@ add_executable(Browser
         src/Parser.cpp
         src/CSS/CSSTokenizer.cpp
         src/CSS/CSSParser.cpp
-        src/Layout/LayoutRenderer.cpp
+        src/Layout/LayoutGenerator.cpp
         src/Images/SvgViewer.cpp
         src/Text/Font.cpp
         src/Render/Renderer.cpp
@@ -62,9 +62,13 @@ add_executable(Browser
         src/JavaScriptEngine/JS_Functions.cpp
         src/NodeToHTML.cpp
         src/Window/Debugwindowmanager.cpp
-        src/Logger.cpp
+        src/Debug/Logger.cpp
+        src/Debug/Timer.cpp
+        src/Layout/WordCollector.cpp
+        src/Layout/LayoutHelper.cpp
+        src/Layout/Context/InlineFormattingContext.cpp
+        src/Layout/Context/BlockFormattingContext.cpp
 )
-
 
 # Target Include Directories
 target_include_directories(Browser PRIVATE
@@ -80,6 +84,7 @@ target_link_libraries(Browser PRIVATE
         Euclase_ImageViewer
         qjs                  # <--- The engine core target
         qjs-libc             # <--- Standard JS modules (console, string tools, etc.)
+        dwmapi
 )
 
 # System library additions for Windows

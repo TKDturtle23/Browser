@@ -36,49 +36,49 @@ void Logger::LogInternal_Va(LogLevel level, const std::string& format, const std
 // Public API mappings - va_start now safely targets 'source'
 void Logger::Log_Verbose(std::string msg, std::string source, int Indent, ...) {
     va_list args;
-    va_start(args, source); // Fixed: target the last named argument
+    va_start(args, Indent); // Fixed: target the last named argument
     LogInternal_Va(LogLevel::Verbose, msg, source, Indent, args);
     va_end(args);
 }
 
 void Logger::Log_Info(std::string msg, std::string source, int Indent, ...) {
     va_list args;
-    va_start(args, source); // Fixed: target the last named argument
+    va_start(args, Indent); // Fixed: target the last named argument
     LogInternal_Va(LogLevel::Info, msg, source, Indent, args);
     va_end(args);
 }
 
 void Logger::Log_Warning(std::string msg, std::string source, int Indent, ...) {
     va_list args;
-    va_start(args, source); // Fixed: target the last named argument
+    va_start(args, Indent); // Fixed: target the last named argument
     LogInternal_Va(LogLevel::Warning, msg, source, Indent, args);
     va_end(args);
 }
 
 void Logger::Log_Error(std::string msg, std::string source, int Indent, ...) {
     va_list args;
-    va_start(args, source); // Fixed: target the last named argument
+    va_start(args, Indent); // Fixed: target the last named argument
     LogInternal_Va(LogLevel::Error, msg, source, Indent, args);
     va_end(args);
 }
 
 void Logger::Log_Fatal(std::string msg, std::string source, int Indent, ...) {
     va_list args;
-    va_start(args, source); // Fixed: target the last named argument
+    va_start(args, Indent); // Fixed: target the last named argument
     LogInternal_Va(LogLevel::Fatal, msg, source, Indent, args);
     va_end(args);
 }
 
 void Logger::Log_Debug(std::string msg, std::string source, int Indent, ...) {
     va_list args;
-    va_start(args, source); // Fixed: target the last named argument
+    va_start(args, Indent); // Fixed: target the last named argument
     LogInternal_Va(LogLevel::Debug, msg, source, Indent, args);
     va_end(args);
 }
 
 void Logger::Log(std::string msg, std::string source, int Indent, ...) {
     va_list args;
-    va_start(args, source); // Fixed: target the last named argument
+    va_start(args, Indent); // Fixed: target the last named argument
     LogInternal_Va(LogLevel::None, msg, source, Indent, args);
     va_end(args);
 }

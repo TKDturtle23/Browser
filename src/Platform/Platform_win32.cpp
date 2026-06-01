@@ -3,6 +3,20 @@
 #ifdef _WIN32
 #include <windows.h>
 #include <windowsx.h>
+#include <dwmapi.h>
+#pragma comment(lib, "dwmapi.lib")
+
+// Windows 11 rounded corner constants
+#ifndef DWMWA_WINDOW_CORNER_PREFERENCE
+#define DWMWA_WINDOW_CORNER_PREFERENCE 33
+#endif
+
+enum DWM_WINDOW_CORNER_PREFERENCE {
+    DWMWCP_DEFAULT      = 0,
+    DWMWCP_DONOTROUND   = 1,
+    DWMWCP_ROUND        = 2, // Standard Windows 11 Rounding
+    DWMWCP_ROUNDSMALL   = 3  // Slight Rounding (like tool windows)
+};
 
 static LRESULT CALLBACK WindowProc(
     HWND hwnd,
@@ -24,10 +38,21 @@ static LRESULT CALLBACK WindowProc(
             if (platform) {
                 platform->running = false;
             }
+            if (platform->Primary) {
+                PostQuitMessage(0);
+            }
 
-            PostQuitMessage(0);
 
             return 0;
+        }
+        case WM_NCCALCSIZE: {
+            // If wParam is TRUE, we can specify the client area.
+            // Returning 0 tells Windows the client area covers the whole window,
+            // which completely removes the native title bar and that pesky white line.
+            if (wParam == TRUE) {
+                return 0;
+            }
+            return DefWindowProc(hwnd, uMsg, wParam, lParam);
         }
         case WM_ENTERSIZEMOVE: {
             if (platform) {
@@ -36,7 +61,45 @@ static LRESULT CALLBACK WindowProc(
             SetTimer(hwnd, 1, 16, nullptr); // ~60 FPS
             return 0;
         }
+        case WM_NCHITTEST: {
+            int xPos = GET_X_LPARAM(lParam);
+            int yPos = GET_Y_LPARAM(lParam);
 
+            POINT pt = { xPos, yPos };
+            ScreenToClient(hwnd, &pt);
+
+            const int BORDER_WIDTH = 5;
+
+            if (platform) {
+                // 1. Keep your edge/corner resizing logic exactly the same
+                bool isLeft   = (pt.x < BORDER_WIDTH);
+                bool isRight  = (pt.x >= platform->windowWidth - BORDER_WIDTH);
+                bool isTop    = (pt.y < BORDER_WIDTH);
+                bool isBottom = (pt.y >= platform->windowHeight - BORDER_WIDTH);
+
+                if (isTop && isLeft)     return HTTOPLEFT;
+                if (isTop && isRight)    return HTTOPRIGHT;
+                if (isBottom && isLeft)  return HTBOTTOMLEFT;
+                if (isBottom && isRight) return HTBOTTOMRIGHT;
+                if (isLeft)   return HTLEFT;
+                if (isRight)  return HTRIGHT;
+                if (isTop)    return HTTOP;
+                if (isBottom) return HTBOTTOM;
+
+
+
+                // 3. Check if the mouse is inside any of the allowed drag zones
+
+                    if (pt.x >= platform->topBarHeight.x && pt.x < (platform->topBarHeight.x + platform->topBarHeight.width) &&
+                        pt.y >= platform->topBarHeight.y && pt.y < (platform->topBarHeight.y + platform->topBarHeight.height)) {
+                        return HTCAPTION; // Drag the window!
+                        }
+
+            }
+
+            // 4. Anything else (including your tabs) behaves like normal UI
+            return HTCLIENT;
+        }
         case WM_EXITSIZEMOVE: {
             if (platform) {
                 platform->resizing = false;
@@ -99,6 +162,7 @@ static LRESULT CALLBACK WindowProc(
 
 
         }
+
         default:
             return DefWindowProc(
                 hwnd,
@@ -115,14 +179,15 @@ Platform_Win32::Platform_Win32() {
 }
 
 Platform_Win32::~Platform_Win32() {
-    CloseWindow();
+    Platform_Win32::CloseWindow();
 }
 
 bool Platform_Win32::OpenWindow(
     int width,
     int height,
-    const char* title
+    const char* title, bool PrimaryWindow
 ) {
+Primary = PrimaryWindow;
 
     windowWidth = width;
     windowHeight = height;
@@ -144,14 +209,15 @@ bool Platform_Win32::OpenWindow(
     wc.hInstance = instance;
     wc.lpszClassName = className;
     wc.hCursor = LoadCursor(nullptr, IDC_ARROW);
-
+    // Use WS_POPUP | WS_THICKFRAME to allow resizing but remove the native title bar
+    DWORD windowStyle = WS_POPUP | WS_THICKFRAME | WS_MINIMIZEBOX | WS_MAXIMIZEBOX;
     RegisterClass(&wc);
 
     hwnd = CreateWindowEx(
         0,
         className,
         title,
-        WS_OVERLAPPEDWINDOW,
+        windowStyle,
         CW_USEDEFAULT,
         CW_USEDEFAULT,
         adjustedWidth,   // use adjusted size here
@@ -165,7 +231,13 @@ bool Platform_Win32::OpenWindow(
     if (!hwnd) {
         return false;
     }
-
+    DWM_WINDOW_CORNER_PREFERENCE preference = DWMWCP_ROUND;
+    DwmSetWindowAttribute(
+        hwnd,
+        DWMWA_WINDOW_CORNER_PREFERENCE,
+        &preference,
+        sizeof(preference)
+    );
     SetWindowLongPtr(
         hwnd,
         GWLP_USERDATA,
@@ -478,6 +550,25 @@ bool Platform_Win32::IsRunning() const {
 void Platform_Win32::SetMinimumSize(int width, int height) {
 min_width = width;
     min_height = height;
+}
+void Platform_Win32::MinimizeWindow() {
+    ShowWindow(hwnd, SW_MINIMIZE);
+}
+
+void Platform_Win32::MaximizeOrRestoreWindow() {
+    WINDOWPLACEMENT wp;
+    wp.length = sizeof(WINDOWPLACEMENT);
+    GetWindowPlacement(hwnd, &wp);
+
+    if (wp.showCmd == SW_SHOWMAXIMIZED) {
+        ShowWindow(hwnd, SW_RESTORE);
+    } else {
+        ShowWindow(hwnd, SW_MAXIMIZE);
+    }
+}
+
+bool Platform_Win32::Is_WindowZoomed() const {
+    return IsZoomed(hwnd);
 }
 
 #endif
