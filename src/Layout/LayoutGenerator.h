@@ -15,16 +15,12 @@
 class LayoutGenerator {
 public:
 
-
-    FontMetrics PrepareFontContext(const Style &s, int forcedSize, Font *&outFont);
-
     explicit LayoutGenerator(Renderer& renderer);
 
     // Full layout + render pass driven by the DOM root.
     void Update(Node& dom);
 
-    // Public so FormattingContext subclasses can reuse them.
-    Font& ResolveFont(const Style& s);
+
 
     BoxEdges ResolvePadding(const Style &s, int containerWidth) const;
 
@@ -34,10 +30,7 @@ public:
 
     void ApplyMarginCentering(const Style &s, BoxEdges &margin, int containerWidth, int boxWidth) const;
 
-    Font BaseFont;
-    Font BaseItalicFont;
-    Font BaseBoldFont;
-    Font BaseBoldItalicFont;
+
     // Lay out a single block-level node.  Delegates child layout to the
     // appropriate FormattingContext.
     LayoutBox LayoutBlock(Node &node,

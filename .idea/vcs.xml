@@ -5,6 +5,7 @@
     <mapping directory="$PROJECT_DIR$/submodules/ImageLoader" vcs="Git" />
     <mapping directory="$PROJECT_DIR$/submodules/curl" vcs="Git" />
     <mapping directory="$PROJECT_DIR$/submodules/freetype" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/submodules/freetype/subprojects/dlg" vcs="Git" />
     <mapping directory="$PROJECT_DIR$/submodules/libwebp" vcs="Git" />
     <mapping directory="$PROJECT_DIR$/submodules/quickjs" vcs="Git" />
   </component>

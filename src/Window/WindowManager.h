@@ -63,6 +63,7 @@ private:
     UI_Image plus;
 
     Font fallbackFont;
+
 };
 
 

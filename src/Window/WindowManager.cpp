@@ -6,12 +6,17 @@
 #include <iostream>
 #include <thread>
 
+#include "Layout/Context/FontManager.h"
+
 #define TOP_WIDTH 88
 
 WindowManager::WindowManager(const int width, const int height)
     : renderer(width != 0 ? width : 800, height != 0 ? height : 600),
       ui_manager(renderer.GetWidth(), TOP_WIDTH),
-      debugWindow(std::make_unique<DebugWindowManager>(900, 500)), fallbackFont("arial/ARIAL.TTF", 14)
+      debugWindow(std::make_unique<DebugWindowManager>(900, 500)),
+fallbackFont("arial/ARIAL.TTF", 14)
+
+
 {
     platform = CreatePlatform();
 
@@ -22,7 +27,6 @@ WindowManager::WindowManager(const int width, const int height)
     platform->SetMinimumSize(500, 500);
     platform->SetTopBarHeight({0, 0, platform->GetWidth(), TOP_WIDTH});
 
-    tabs.push_back({ "localhost:8080", "http://localhost:8080/", "localhost:8080" });
     tabs.push_back({ "Example Domain", "https://example.com/", "Example Domain" });
 
     minimize = ui_manager.MakeImage("./Assets/Icons/minus.svg", 27, 27);
@@ -35,7 +39,11 @@ WindowManager::WindowManager(const int width, const int height)
     back = ui_manager.MakeImage("./Assets/Icons/arrow-left.svg", 20, 20);
     reload = ui_manager.MakeImage("./Assets/Icons/rotate-cw.svg", 20, 20);
 
-
+    FontManager::setFallbackFont(&fallbackFont);
+    FontManager::AddFont("Arial", FontGroup(Font           ("arial/ARIAL.TTF",   16)
+, Font     ("arial/ARIALI.TTF",  16)
+, Font       ("arial/ARIALBD.TTF", 16)
+, Font ("arial/ARIALBI.TTF", 16)));
     int targetWidth  = renderer.GetWidth();
     int targetHeight = renderer.GetHeight() - TOP_WIDTH;
 

@@ -25,6 +25,7 @@
 #include "Images/SvgViewer.h"
 #include "JavaScriptEngine/JavaScriptEngine.h"
 #include "JavaScriptEngine/JS_Functions.h"
+#include "Layout/Context/FontManager.h"
 
 static std::string ConvertUrlToCachePath(const std::string& url) {
     std::string safeName = url;
@@ -82,7 +83,7 @@ ViewportManager::ViewportManager(const int width, const int height, JavaScriptEn
                                                                       layout(renderer),
                                                                       cache(
                                                                           std::filesystem::current_path().string() +
-                                                                          "/cache"), dom(), engine(engine), layoutRenderer(renderer, fallbackFont) {
+                                                                          "/cache"), dom(), engine(engine), layoutRenderer(renderer) {
     tabContext = engine.create_tab_context();
 
 }

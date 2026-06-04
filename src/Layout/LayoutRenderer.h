@@ -11,17 +11,12 @@
 
 class LayoutRenderer {
 public:
-    explicit LayoutRenderer(Renderer& renderer, Font& FallbackFont);
-
-    Font &ResolveFont(const Style &s);
-
-    FontMetrics PrepareFontContext(const Style &s, int forcedSize, Font *&outFont);
-
+    explicit LayoutRenderer(Renderer& renderer);
 
 
     void RenderRoot(const LayoutBox& root);
     void UpdateDom(Node *dom);
-    void AddFont(std::string name, FontGroup& group);
+
 private:
     void Render(const LayoutBox &box);
 
@@ -46,8 +41,6 @@ private:
     Node *Dom{};
     Node *Body{};
     Renderer& renderer;
-    std::unordered_map<std::string, std::reference_wrapper<FontGroup>> Fonts;
-    Font &criticalFallbackFont;
 };
 
 

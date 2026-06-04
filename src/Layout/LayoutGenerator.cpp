@@ -17,10 +17,7 @@
 
 LayoutGenerator::LayoutGenerator(Renderer& renderer)
     : renderer(renderer)
-    , BaseFont           ("arial/ARIAL.TTF",   16)
-    , BaseItalicFont     ("arial/ARIALI.TTF",  16)
-    , BaseBoldFont       ("arial/ARIALBD.TTF", 16)
-    , BaseBoldItalicFont ("arial/ARIALBI.TTF", 16)
+
 {}
 
 

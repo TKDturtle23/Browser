@@ -8,36 +8,10 @@
 #include <cassert>
 #include <functional>
 
-Font& LayoutRenderer::ResolveFont(const Style& s) {
-    std::string targetFamily = "Arial";
+#include "Context/FontManager.h"
 
-    auto it = Fonts.find(targetFamily);
 
-    if (it == Fonts.end() && !Fonts.empty()) {
-        it = Fonts.begin();
-    }
-
-    if (it != Fonts.end()) {
-        FontGroup& group = it->second.get();
-
-        if (s.font_bold && s.font_italic) return group.boldItalic;
-        if (s.font_bold)                  return group.bold;
-        if (s.font_italic)                return group.italic;
-        return group.base;
-    }
-
-    return criticalFallbackFont;
-}
-
-FontMetrics LayoutRenderer::PrepareFontContext(const Style& s, int forcedSize, Font*& outFont) {
-    outFont = &ResolveFont(s);
-    int size = (forcedSize > 0) ? forcedSize : ResolveFontSize(s.font_size, renderer.GetWidth(), renderer.GetHeight());
-    if (size <= 0) size = 16;
-    outFont->SetSize(size);
-    return outFont->GetMetrics();
-}
-
-LayoutRenderer::LayoutRenderer(Renderer &renderer, Font& FallbackFont) : renderer(renderer), criticalFallbackFont(FallbackFont) {}
+LayoutRenderer::LayoutRenderer(Renderer &renderer) : renderer(renderer){}
 
 void LayoutRenderer::RenderRoot(const LayoutBox &root) {
     renderer.Clear(Body->computedStyle.backgroundColor);
@@ -64,9 +38,6 @@ void LayoutRenderer::UpdateDom(Node *dom) {
     Body = findBody(Dom);
 }
 
-void LayoutRenderer::AddFont(std::string name, FontGroup &group) {
-    Fonts.insert_or_assign(std::move(name), group);
-}
 void LayoutRenderer::Render(const LayoutBox& box) {
     if (box.node) {
         box.node->renderData.box.x      = box.x;
@@ -144,7 +115,7 @@ void LayoutRenderer::RenderTextRun(const LayoutBox& box) {
     const Style& s = box.node->parent ? box.node->parent->computedStyle : box.node->computedStyle;
 
     Font* font = nullptr;
-    FontMetrics m = PrepareFontContext(s, box.fontSize, font);
+    FontMetrics m = FontManager::PrepareFontContext(s, box.fontSize, font, renderer.GetWidth(), renderer.GetHeight());
 
     int baseline = box.y + m.ascent;
     Color color  = s.color;

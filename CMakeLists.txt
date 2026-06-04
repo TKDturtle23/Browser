@@ -68,6 +68,10 @@ add_executable(Browser
         src/Layout/LayoutHelper.cpp
         src/Layout/Context/InlineFormattingContext.cpp
         src/Layout/Context/BlockFormattingContext.cpp
+        src/Layout/LayoutRenderer.cpp
+        src/Layout/Context/FontManager.cpp
+        src/Layout/Context/FontManager.h
+        src/Layout/Context/FontManager.cpp
 )
 
 # Target Include Directories

@@ -5,20 +5,23 @@
 #include "InlineFormattingContext.h"
 
 #include <iostream>
-#include "../LayoutGenerator.h"
 
+#include "FontManager.h"
+#include "../LayoutGenerator.h"
+#include "../LayoutHelper.h"
 int InlineFormattingContext::LayoutRoots(std::vector<Node *> &roots, LayoutBox &parent, int startX, int startY,
                                          int containerWidth) const {
     std::vector<Word> words;
+    auto group = FontManager::GetFontGroup("Arial");
     WordCollector wc(
-        lr_.BaseFont, lr_.BaseItalicFont,
-        lr_.BaseBoldFont, lr_.BaseBoldItalicFont,
+        group.base, group.italic,
+        group.bold, group.boldItalic,
         words,
-        [&](const Style& s) -> Font& { return lr_.ResolveFont(s); }, lr_.GetWidth(), lr_.GetHeight()
+        [&](const Style& s) -> Font& { return FontManager::ResolveFont(s); }, lr_.GetWidth(), lr_.GetHeight()
     );
     for (Node* n : roots) wc.Visit(*n);
 
-    Font& baseFont   = lr_.BaseFont;
+    Font& baseFont   = group.base;
     FontMetrics base = baseFont.GetMetrics();
     int spaceWidth   = baseFont.GetGlyph(' ').advance;
     int rightEdge    = startX + containerWidth;
@@ -72,7 +75,7 @@ int InlineFormattingContext::LayoutRoots(std::vector<Node *> &roots, LayoutBox &
         if (isNoWrap && cursorX + gap + w.width > rightEdge) {
             if (doEllipsis) {
                 Font* font = nullptr;
-                lr_.PrepareFontContext(s, w.fontSize, font);
+                FontManager::PrepareFontContext(s, w.fontSize, font, lr_.GetWidth(), lr_.GetHeight());
                 int ellipsisWidth  = font->GetGlyph('.').advance * 3;
                 int availableWidth = rightEdge - (cursorX + gap) - ellipsisWidth;
 
@@ -105,7 +108,7 @@ int InlineFormattingContext::LayoutRoots(std::vector<Node *> &roots, LayoutBox &
         // Normal text run
         cursorX += gap;
         Font* font = nullptr;
-        FontMetrics wm = lr_.PrepareFontContext(s, w.fontSize, font);
+        FontMetrics wm = FontManager::PrepareFontContext(s, w.fontSize, font, lr_.GetWidth(), lr_.GetHeight());
 
         LayoutBox run;
         run.kind     = BoxKind::TextRun;
@@ -158,17 +161,17 @@ void InlineFormattingContext::FinalizeLineMetrics(LayoutBox &line, LayoutGenerat
                                      ? run.node->parent->computedStyle
                                      : run.node->computedStyle;
             Font* font = nullptr;
-            FontMetrics wm = lr.PrepareFontContext(style, run.fontSize, font);
+            FontMetrics wm = FontManager::PrepareFontContext(style, run.fontSize, font, lr.GetWidth(), lr.GetHeight());
             maxAscent  = std::max(maxAscent,  wm.ascent);
             maxDescent = std::max(maxDescent, wm.descent);
         }
     }
-
+    auto group = FontManager::GetFontGroup("Arial");
     maxH = std::max(maxH, maxAscent + maxDescent);
     if (maxH == 0) {
-        maxH       = lr.BaseFont.GetMetrics().lineHeight;
-        maxAscent  = lr.BaseFont.GetMetrics().ascent;
-        maxDescent = lr.BaseFont.GetMetrics().descent;
+        maxH       = group.base.GetMetrics().lineHeight;
+        maxAscent  = group.base.GetMetrics().ascent;
+        maxDescent = group.base.GetMetrics().descent;
     }
 
     line.height      = maxH;
@@ -182,7 +185,7 @@ void InlineFormattingContext::FinalizeLineMetrics(LayoutBox &line, LayoutGenerat
                                  ? run.node->parent->computedStyle
                                  : run.node->computedStyle;
         Font* font = nullptr;
-        FontMetrics wm = lr.PrepareFontContext(style, run.fontSize, font);
+        FontMetrics wm = FontManager::PrepareFontContext(style, run.fontSize, font, lr.GetWidth(), lr.GetHeight());
 
         int baselineY = line.y + maxAscent;
         bool isImg    = (run.node->tag == "img");
