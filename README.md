@@ -8,5 +8,6 @@ CSS support is limited, but growing.
 
 ## Building
 This uses CMake. to build, I would recommend using a CMake GUI in an IDE, but it builds normally. Make sure you initialize the submodules.
+ - I use mingw, but I think most build systems should work.
 
 This project uses Curl, Freetype, my custom image loader, libwebp, nanosvg, and QuickJS.
