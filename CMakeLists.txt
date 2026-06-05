@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.20) # Rolled back to 3.20+ for broader compatibility, adjust if 3.24+ features are required
 
-project(Browser LANGUAGES CXX)
+project(Browser LANGUAGES C CXX)
 if(MINGW)
     set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -static -static-libgcc -static-libstdc++")
 endif()
@@ -72,6 +72,20 @@ add_executable(Browser
         src/Layout/Context/FontManager.cpp
         src/Layout/Context/FontManager.h
         src/Layout/Context/FontManager.cpp
+        src/Render/Backend/IRendererBackend.h
+        src/Render/Backend/OpenGL/OpenGLBackend.cpp
+        src/Render/Backend/OpenGL/OpenGLBackend.h
+        src/Render/Backend/Software/SoftwareBackend.cpp
+        src/Render/Backend/Software/SoftwareBackend.h
+        src/Render/Backend/IRenderBackend.cpp
+        src/Render/Backend/RenderTarget.h
+        src/Platform/GLAD/src/wgl.c
+        src/Platform/GLAD/src/gl.c
+        src/Render/Backend/OpenGL/Platform/IGLContext.h
+        src/Render/Backend/OpenGL/Platform/Win32GLContext.cpp
+        src/Render/Backend/OpenGL/Platform/Win32GLContext.h
+        src/Render/Backend/OpenGL/Platform/IGLContext.cpp
+        src/Render/Backend/OpenGL/Platform/IGLContext.cpp
 )
 
 # Target Include Directories
@@ -79,6 +93,7 @@ target_include_directories(Browser PRIVATE
         "${CMAKE_CURRENT_SOURCE_DIR}/src"
         "${CMAKE_CURRENT_SOURCE_DIR}/submodules/ImageLoader/src"
         submodules/quickjs
+        "src/Platform/GLAD/include"
 )
 
 # Target Link Libraries
@@ -89,6 +104,7 @@ target_link_libraries(Browser PRIVATE
         qjs                  # <--- The engine core target
         qjs-libc             # <--- Standard JS modules (console, string tools, etc.)
         dwmapi
+        opengl32
 )
 
 # System library additions for Windows

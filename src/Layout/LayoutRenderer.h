@@ -11,7 +11,7 @@
 
 class LayoutRenderer {
 public:
-    explicit LayoutRenderer(Renderer& renderer);
+    explicit LayoutRenderer(RendererSurface& renderer);
 
 
     void RenderRoot(const LayoutBox& root);
@@ -40,7 +40,7 @@ private:
 private:
     Node *Dom{};
     Node *Body{};
-    Renderer& renderer;
+    RendererSurface& renderer;
 };
 
 

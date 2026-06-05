@@ -22,15 +22,15 @@ public:
 
     void CloseWindow() override;
 
-    void Present(
-        const std::vector<Color>& pixels
-    ) override;
-
+    void* GetNativeHandle() const override;
+    void* GetInstanceHandle() const;
+    void Present() override;
     bool PollEvent(
         Event& event
     ) override;
     void SetTopBarHeight(DragZone pixels) override { topBarHeight = pixels;};
     int GetWidth() const override;
+    void Present(const std::vector<Color>& pixels);
     int GetHeight() const override;
 
     bool IsRunning() const override;
@@ -53,10 +53,8 @@ public:
 private:
 
     HWND hwnd = nullptr;
-    HDC hdc = nullptr;
     HINSTANCE instance = nullptr;
 
-    BITMAPINFO bitmapInfo = {};
 };
 
 #endif

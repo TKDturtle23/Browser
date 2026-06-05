@@ -2,19 +2,67 @@
 
 #include <vector>
 #include <cstdint>
+
 #include "../Color.h"
 #include "../Text/Font.h"
-class Renderer {
+#include "Backend/IRendererBackend.h"
+#include "Backend/RenderTarget.h"
+
+class RendererSurface {
 public:
-    Renderer(int width, int height);
+
+    RendererSurface(
+        int width,
+        int height
+    );
+
+    ~RendererSurface();
 
     void Resize(int width, int height);
 
+    int GetWidth() const { return width; }
+    int GetHeight() const { return height; }
+
     void Clear(Color color);
 
-    void DrawPixel(int x, int y, Color color);
+    void FillRect(
+        int x,
+        int y,
+        int w,
+        int h,
+        Color color
+    );
 
-    void FillRect(int x, int y, int w, int h, Color color);
+    void DrawLine(
+        int x0,
+        int y0,
+        int x1,
+        int y1,
+        int thickness,
+        Color color
+    );
+
+    void DrawLine(
+        int x0,
+        int y0,
+        int x1,
+        int y1,
+        Color color
+    );
+
+    void DrawPixel(
+        int x,
+        int y,
+        Color color
+    );
+
+    void DrawGlyph(
+        int x,
+        int y,
+        const Glyph& glyph,
+        Color color
+    );
+
     void DrawRect(
         int x,
         int y,
@@ -23,46 +71,60 @@ public:
         Color color
     );
 
-    void FillRectBeveled(int x, int y, int w, int h, int bevelSize, Color color);
-
-    void DrawRectBeveled(int x, int y, int w, int h, int bevelSize, Color color);
-
-    void DrawLine(int x0, int y0, int x1, int y1, Color color);
-
-    void FillRectWithBorder(
-    int x,
-    int y,
-    int w,
-    int h,
-    Color fill,
-    Color border
-);
-    void Present(); // swap buffers
-
-    const std::vector<Color>& GetFrontBuffer() const;
-    void DrawGlyph(
+    void FillRectBeveled(
         int x,
         int y,
-        const Glyph& glyph,
+        int w,
+        int h,
+        int radius,
         Color color
     );
-    int GetWidth() const;
-    int GetHeight() const;
-    void DrawCircle(int cx, int cy, int radius, Color color); // draws an anti-aliased circle
+
+    void DrawCircle(
+        int cx,
+        int cy,
+        int radius,
+        Color color
+    );
+
     void DrawWavyLine(
-        int x0, int y0,
-        int x1, int y1,
+        int startX,
+        int y,
+        int endX,
+        int amplitude,
+        int wavelength,
+        Color color
+    );
+
+    void DrawWavyLine(
+        int startX,
+        float startY,
+        int endX,
+        float endY,
         float amplitude,
         float frequency,
         int thickness,
         Color color
     );
 
-    void CopyFromBuffer(int x, int y, int w, int h, const std::vector<Color> &buffer);
+    void BlitFrom(
+        const RendererSurface& source,
+        int dstX,
+        int dstY,
+        int srcX,
+        int srcY,
+        int w,
+        int h
+    );
+
+    RenderTargetID GetTargetID() const;
+
 private:
+
+    RenderTargetID target;
+
     int width;
     int height;
 
-    std::vector<Color> frontBuffer;
-    std::vector<Color> backBuffer;
+    std::shared_ptr<IRenderBackend> backend;
 };

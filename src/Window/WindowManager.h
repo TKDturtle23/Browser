@@ -35,11 +35,13 @@ private:
 
     void SetDebugNetworkEntries(const std::vector<DebugNetEntry> &entries);
 
-    Renderer renderer;
+    std::shared_ptr<IRenderBackend> renderBackend;
+    WindowID renderWindow = 0;
+    std::unique_ptr<RendererSurface> renderer;
     std::unique_ptr<Platform> platform;
 
     std::function<void()> OnRender;
-    UIManager ui_manager;
+    std::unique_ptr<UIManager> ui_manager;
 
     std::string currentTabUrl = "localhost:8080";
     bool isTabActive = true;

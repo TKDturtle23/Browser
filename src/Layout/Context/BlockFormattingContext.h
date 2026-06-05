@@ -14,7 +14,7 @@ class BlockFormattingContext : public FormattingContext {
 public:
     explicit BlockFormattingContext(LayoutGenerator& lr) : lr_(lr) {}
 
-    int Layout(Node& node, LayoutBox& parent, int contentX, int contentY, int contentWidth) override;
+    int Layout(Node& node, LayoutBox& parent, int contentX, int contentY, int contentWidth, int contentHeight) override;
 
 private:
     size_t LayoutInlineRun(std::vector<std::unique_ptr<Node>>& kids, size_t start,

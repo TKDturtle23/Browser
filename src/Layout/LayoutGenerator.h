@@ -15,7 +15,7 @@
 class LayoutGenerator {
 public:
 
-    explicit LayoutGenerator(Renderer& renderer);
+    explicit LayoutGenerator(RendererSurface& renderer);
 
     // Full layout + render pass driven by the DOM root.
     void Update(Node& dom);
@@ -33,17 +33,17 @@ public:
 
     // Lay out a single block-level node.  Delegates child layout to the
     // appropriate FormattingContext.
-    LayoutBox LayoutBlock(Node &node,
+    LayoutBox LayoutBlock(Node& node,
                           int containerX,
                           int containerY,
-                          int containerWidth);
+                          int containerWidth, int containerHeight);
 
     int GetWidth() const { return renderer.GetWidth(); }
     int GetHeight() const { return renderer.GetHeight(); }
 
     LayoutBox& GetRoot() { return root; }
 private:
-    Renderer& renderer;
+    RendererSurface& renderer;
     LayoutBox root;
     Node *body = nullptr;
 

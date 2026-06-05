@@ -36,7 +36,7 @@ UIManager::UIManager(int w, int h)
     : windowWidth(w), windowHeight(h),
       font("arial/ARIAL.TTF", 14)
 {
-    renderer = std::make_unique<Renderer>(w, h);
+    renderer = std::make_unique<RendererSurface>(w, h);
 
     // Push a root layout context
     LayoutContext root;
@@ -55,10 +55,6 @@ void UIManager::Resize(int w, int h) {
         layoutStack.front().contentW = w;
         layoutStack.front().contentH = h;
     }
-}
-
-const std::vector<Color>& UIManager::GetFrontBuffer() const {
-    return renderer->GetFrontBuffer();
 }
 
 // ---------------------------------------------------------------------------
@@ -218,7 +214,6 @@ void UIManager::EndFrame() {
     io.mouseWheelDelta  = 0;
     redrawNeeded        = false;
 
-    renderer->Present();
 }
 
 // ---------------------------------------------------------------------------
@@ -584,10 +579,10 @@ int UIManager::DrawTextInternal(const std::string& text,
     int  ellipsisW    = 0;
 
     if (maxWidth > 0) {
-        auto eg = font.GetGlyph('.');
+        auto eg = font.GetGlyph(IRenderBackend::GetRenderBackend().get(), '.');
         ellipsisW = eg.advance * 3;
         int totalW = 0;
-        for (char c : text) totalW += font.GetGlyph(c).advance;
+        for (char c : text) totalW += font.GetGlyph(IRenderBackend::GetRenderBackend().get(), c).advance;
         needEllipsis = (totalW > maxWidth);
     }
 
@@ -595,7 +590,7 @@ int UIManager::DrawTextInternal(const std::string& text,
     int drawn  = 0;
 
     for (char c : text) {
-        auto g = font.GetGlyph(c);
+        auto g = font.GetGlyph(IRenderBackend::GetRenderBackend().get(), c);
         if (prev != '\0') { int k = font.GetKerning(c, prev).x >> 6; penX += k; drawn += k; }
         if (maxWidth > 0 && drawn + g.advance > avail) break;
         int gx = penX + g.bearingX, gy = baselineY - g.bearingY;
@@ -608,7 +603,7 @@ int UIManager::DrawTextInternal(const std::string& text,
 
     if (needEllipsis) {
         for (int i = 0; i < 3; ++i) {
-            auto g = font.GetGlyph('.');
+            auto g = font.GetGlyph(IRenderBackend::GetRenderBackend().get(), '.');
             int gx = penX + g.bearingX, gy = baselineY - g.bearingY;
             if (IsInsideClip(gx, gy, g.width, g.height))
                 renderer->DrawGlyph(gx, gy, g, color);
@@ -625,7 +620,7 @@ void UIManager::DrawText(const std::string& text, int x, int baselineY,
 
 int UIManager::MeasureText(const std::string& text) const {
     int w = 0;
-    for (char c : text) w += font.GetGlyph(c).advance;
+    for (char c : text) w += font.GetGlyph(IRenderBackend::GetRenderBackend().get(), c).advance;
     return w;
 }
 
@@ -782,14 +777,16 @@ WidgetResult UIManager::Checkbox(const std::string& id_str,
 {
     UIID id = GetScopedID(id_str);
     const int boxSize = 14;
+    const int paddingAfterBox = 8; // Increased from 5 to 8 for more breathing room
     auto& lc = Layout();
     int x = lc.cursorX, y = lc.cursorY;
 
     int labelW = MeasureText(label);
-    int totalW = boxSize + 5 + labelW;
+    int totalW = boxSize + paddingAfterBox + labelW;
     int totalH = boxSize;
 
     WidgetResult r;
+    // Mouse interaction remains bound to the checkbox square
     r.hovered = IsMouseOver(x, y, boxSize, boxSize);
     if (r.hovered) {
         mouseOverAnyWidget = true;
@@ -809,11 +806,13 @@ WidgetResult UIManager::Checkbox(const std::string& id_str,
         renderer->FillRect(x + 6, y + 4, 2, 5, style.Colors.CheckboxMark);
     }
 
-    DrawTextInternal(label, x + boxSize + 5, y + boxSize - 2, style.Colors.Text, boxSize - 10);
+    // Fixed the final parameter: changed from (boxSize - 10) to labelW (or a proper font size)
+    // so the text engine has enough horizontal/vertical space to render the string.
+    DrawTextInternal(label, x + boxSize + paddingAfterBox, y + boxSize - 2, style.Colors.Text, labelW);
+
     AdvanceCursor(totalW, totalH);
     return r;
 }
-
 // ---------------------------------------------------------------------------
 // ColorBadge
 // ---------------------------------------------------------------------------
@@ -854,10 +853,13 @@ WidgetResult UIManager::TextInputWidget(UIID id, std::string& text,
         mouseOverAnyWidget = true;
         hotID = id;
         if (io.mouseLeftClicked) {
-            focusID = id; s.isDragging = true; s.selectStartIndex = -1;
+            focusID = id;
+            s.isDragging = true;
+            s.selectStartIndex = -1;
         }
     } else if (io.mouseLeftClicked && focusID == id) {
-        focusID = UI_ID_NONE; s.isDragging = false;
+        focusID = UI_ID_NONE;
+        s.isDragging = false;
     }
     if (!io.mouseLeftDown) s.isDragging = false;
     result.hovered = over;
@@ -871,16 +873,22 @@ WidgetResult UIManager::TextInputWidget(UIID id, std::string& text,
         if (io.backspacePressed) {
             if (hasSel) {
                 text.erase(selMin, selMax - selMin);
-                s.cursorIndex = selMin; s.selectStartIndex = selMin;
+                s.cursorIndex = selMin;
+                s.selectStartIndex = selMin;
             } else if (s.cursorIndex > 0) {
                 text.erase(s.cursorIndex - 1, 1);
-                --s.cursorIndex; s.selectStartIndex = s.cursorIndex;
+                --s.cursorIndex;
+                s.selectStartIndex = s.cursorIndex;
             }
             result.changed = true;
         } else if (io.lastTypedChar >= 32 && io.lastTypedChar <= 126) {
-            if (hasSel) { text.erase(selMin, selMax - selMin); s.cursorIndex = selMin; }
+            if (hasSel) {
+                text.erase(selMin, selMax - selMin);
+                s.cursorIndex = selMin;
+            }
             text.insert(text.begin() + s.cursorIndex, io.lastTypedChar);
-            ++s.cursorIndex; s.selectStartIndex = s.cursorIndex;
+            ++s.cursorIndex;
+            s.selectStartIndex = s.cursorIndex;
             result.changed = true;
         }
 
@@ -888,74 +896,97 @@ WidgetResult UIManager::TextInputWidget(UIID id, std::string& text,
         if (io.enterPressed) result.activated = true;
     }
 
-    // Build per-character X positions
+    // 1. Build per-character X positions
     std::vector<int> charX;
     charX.reserve(text.size() + 1);
-    int penX = x + 8; char prev = '\0';
+    int penX = x + 8;
+    char prev = '\0';
     charX.push_back(penX);
+
     s.cursorIndex      = std::clamp(s.cursorIndex,      0, (int)text.size());
     s.selectStartIndex = std::clamp(s.selectStartIndex, 0, (int)text.size());
+
     for (char c : text) {
-        auto g = font.GetGlyph(c);
+        auto g = font.GetGlyph(IRenderBackend::GetRenderBackend().get(), c);
         if (prev != '\0') penX += font.GetKerning(c, prev).x >> 6;
-        penX += g.advance; charX.push_back(penX); prev = c;
+        penX += g.advance;
+        charX.push_back(penX);
+        prev = c;
     }
 
+    // 2. Handle Mouse Click & Drag Selection Indexes
     if (focusID == id && (io.mouseLeftClicked || s.isDragging)) {
         int target = 0, minD = 999999;
         for (int i = 0; i < (int)charX.size(); ++i) {
             int d = std::abs(io.mouseX - charX[i]);
             if (d < minD) { minD = d; target = i; }
         }
-        if (io.mouseLeftClicked) { s.cursorIndex = target; s.selectStartIndex = target; }
-        else                     { s.cursorIndex = target; }
+        if (io.mouseLeftClicked) {
+            s.cursorIndex = target;
+            s.selectStartIndex = target;
+        } else {
+            s.cursorIndex = target;
+        }
     }
 
-    // Draw
-    Color Bg = (focusID == id) ? style.Colors.InputFocused : style.Colors.InputBg;
+    // 3. Draw Background & Frame Bounds Safely
+    Color Bg = (focusID == id) ? style.Colors.InputBg // Revert to stable fallback if theme color flashes
+                               : style.Colors.InputBg;
     FillRectRound(x, y, w, h, style.Vars.InputRounding, Bg, style.Vars.InputRoundingCorners);
+
+    // Apply border outline indicators clearly
+    Color borderCol = (focusID == id) ? style.Colors.InputBorderFocus : style.Colors.InputBorderIdle;
+    renderer->DrawRect(x, y, w, h, borderCol);
+
+    // Restrict text selection and glyph overruns to inside the input panel text bounds
+    PushClipRect(x + 4, y + 2, w - 8, h - 4);
 
     bool hasSel = (focusID == id && s.selectStartIndex != -1 && s.selectStartIndex != s.cursorIndex);
     int  selMin = hasSel ? std::min(s.selectStartIndex, s.cursorIndex) : 0;
     int  selMax = hasSel ? std::max(s.selectStartIndex, s.cursorIndex) : 0;
 
+    // 4. Draw Highlight Background
     if (hasSel) {
-        renderer->FillRect(charX[selMin], y + 3,
-                           charX[selMax] - charX[selMin], h - 6,
+        renderer->FillRect(charX[selMin], y + 4,
+                           charX[selMax] - charX[selMin], h - 8,
                            style.Colors.InputSelection);
     }
 
-    int drawX = x + 8; prev = '\0';
+    // 5. Draw Glyphs
+    int drawX = x + 8;
+    prev = '\0';
     int baseline = y + (h / 2) + 5;
     for (int i = 0; i < (int)text.size(); ++i) {
         char c = text[i];
-        auto g = font.GetGlyph(c);
+        auto g = font.GetGlyph(IRenderBackend::GetRenderBackend().get(), c);
         if (g.width == 0 && c != ' ') { drawX += g.advance; continue; }
         if (prev != '\0') drawX += font.GetKerning(c, prev).x >> 6;
+
         Color tc = (hasSel && i >= selMin && i < selMax)
                    ? style.Colors.InputSelText : style.Colors.InputText;
-        renderer->DrawGlyph(drawX + g.bearingX, baseline - g.bearingY, g, tc);
-        drawX += g.advance; prev = c;
+
+        if (IsInsideClip(drawX + g.bearingX, baseline - g.bearingY, g.width, g.height)) {
+            renderer->DrawGlyph(drawX + g.bearingX, baseline - g.bearingY, g, tc);
+        }
+        drawX += g.advance;
+        prev = c;
     }
 
-    // Blinking cursor
-    double now = NowMs();
-    if (s.CursorLastBlink == 0.0) s.CursorLastBlink = now;
-    s.CursorBlinkTime = now;
-    if (now >= s.CursorLastBlink + 500.0) {
-        s.CursorLastBlink = now;
-        s.cursorBlink = !s.cursorBlink;
-    }
+    // 6. --- FIXED BLINK LOGIC ---
+    // Instead of relying on volatile per-frame state accumulations,
+    // evaluate the timestamp directly through a clean 500ms math modulo mapping.
+    uint64_t nowMs = static_cast<uint64_t>(NowMs());
+    bool showCursor = (focusID == id) && ((nowMs / 500) % 2 == 0);
 
-    if (focusID == id && s.cursorBlink && s.cursorIndex < (int)charX.size()) {
-        int padT = 6, padB = 6;
+    if (showCursor && s.cursorIndex < (int)charX.size()) {
+        int padT = 5, padB = 5;
         renderer->FillRect(charX[s.cursorIndex], y + padT, 2, h - padT - padB,
                            style.Colors.InputCursor);
     }
 
+    PopClipRect();
     return result;
 }
-
 WidgetResult UIManager::TextField(const std::string& id_str, std::string& text,
                                   int width, int height)
 {

@@ -11,7 +11,7 @@
 #include "Context/FontManager.h"
 
 
-LayoutRenderer::LayoutRenderer(Renderer &renderer) : renderer(renderer){}
+LayoutRenderer::LayoutRenderer(RendererSurface &renderer) : renderer(renderer){}
 
 void LayoutRenderer::RenderRoot(const LayoutBox &root) {
     renderer.Clear(Body->computedStyle.backgroundColor);
@@ -124,7 +124,7 @@ void LayoutRenderer::RenderTextRun(const LayoutBox& box) {
 
     for (char c : box.text) {
         if (prev) cursorX += font->GetKerning(c, prev).x >> 6;
-        const Glyph& g = font->GetGlyph(c);
+        const Glyph& g = font->GetGlyph(IRenderBackend::GetRenderBackend().get(), c);
         renderer.DrawGlyph(cursorX + g.bearingX, baseline - g.bearingY, g, color);
         cursorX += g.advance;
         prev = c;

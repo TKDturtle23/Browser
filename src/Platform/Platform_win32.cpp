@@ -244,21 +244,7 @@ Primary = PrimaryWindow;
         reinterpret_cast<LONG_PTR>(this)
     );
 
-    hdc = GetDC(hwnd);
 
-    bitmapInfo.bmiHeader.biSize =
-        sizeof(BITMAPINFOHEADER);
-
-    bitmapInfo.bmiHeader.biWidth =
-        width;
-
-    bitmapInfo.bmiHeader.biHeight =
-        -height;
-
-    bitmapInfo.bmiHeader.biPlanes = 1;
-    bitmapInfo.bmiHeader.biBitCount = 32;
-    bitmapInfo.bmiHeader.biCompression =
-        BI_RGB;
 
     ShowWindow(hwnd, SW_SHOW);
 
@@ -268,13 +254,6 @@ Primary = PrimaryWindow;
 }
 
 void Platform_Win32::CloseWindow() {
-
-    if (hdc) {
-
-        ReleaseDC(hwnd, hdc);
-
-        hdc = nullptr;
-    }
 
     if (hwnd) {
 
@@ -286,31 +265,13 @@ void Platform_Win32::CloseWindow() {
     running = false;
 }
 
-void Platform_Win32::Present(
-    const std::vector<Color>& pixels
-) {
+void* Platform_Win32::GetNativeHandle() const
+{
+    return hwnd;
+}
 
-    if (!hdc)
-        return;
-
-    RECT clientRect;
-    GetClientRect(hwnd, &clientRect);
-    int clientW = clientRect.right  - clientRect.left;
-    int clientH = clientRect.bottom - clientRect.top;
-
-    bitmapInfo.bmiHeader.biWidth  =  clientW;
-    bitmapInfo.bmiHeader.biHeight = -clientH;
-
-    StretchDIBits(
-        hdc,
-        0, 0, clientW, clientH,
-        0, 0, windowWidth, windowHeight,
-        pixels.data(),
-        &bitmapInfo,
-        DIB_RGB_COLORS,
-        SRCCOPY
-    );
-
+void Platform_Win32::Present()
+{
 
 }
 
@@ -539,6 +500,40 @@ int Platform_Win32::GetWidth() const {
     return windowWidth;
 }
 
+
+void Platform_Win32::Present(const std::vector<Color>& pixels) {
+    // This serves exclusively as your Tier 3 CPU Software Renderer presentation path
+    if (hwnd == nullptr) return;
+
+    // Get a temporary device context handle on the fly
+    HDC localHDC = GetDC(hwnd);
+    if (!localHDC) return;
+
+    RECT clientRect;
+    GetClientRect(hwnd, &clientRect);
+    int clientW = clientRect.right  - clientRect.left;
+    int clientH = clientRect.bottom - clientRect.top;
+
+    BITMAPINFO localBitmapInfo = {};
+    localBitmapInfo.bmiHeader.biSize        = sizeof(BITMAPINFOHEADER);
+    localBitmapInfo.bmiHeader.biWidth       = windowWidth;  // Match source vector width
+    localBitmapInfo.bmiHeader.biHeight      = -windowHeight; // Top-down parsing
+    localBitmapInfo.bmiHeader.biPlanes      = 1;
+    localBitmapInfo.bmiHeader.biBitCount    = 32;
+    localBitmapInfo.bmiHeader.biCompression = BI_RGB;
+
+    StretchDIBits(
+        localHDC,
+        0, 0, clientW, clientH,
+        0, 0, windowWidth, windowHeight,
+        pixels.data(),
+        &localBitmapInfo,
+        DIB_RGB_COLORS,
+        SRCCOPY
+    );
+
+    ReleaseDC(hwnd, localHDC);
+}
 int Platform_Win32::GetHeight() const {
     return windowHeight;
 }
@@ -570,5 +565,7 @@ void Platform_Win32::MaximizeOrRestoreWindow() {
 bool Platform_Win32::Is_WindowZoomed() const {
     return IsZoomed(hwnd);
 }
-
+void* Platform_Win32::GetInstanceHandle() const {
+    return instance;
+}
 #endif

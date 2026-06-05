@@ -6,6 +6,7 @@
 #include <functional>
 
 #include "UI/InterfaceManager.h"
+#include "Render/Backend/IRendererBackend.h"
 #include "../Debug/Logger.h"
 #include "JavaScriptEngine/JavaScriptEngine.h"
 #include "CurlGrabber.h"
@@ -73,7 +74,7 @@ public:
                                  const std::string &source, int indent);
 
     void ClearLogs();
-
+    Platform* GetPlatform() const;
     // Replace the full network table (simplest; rebuild from your resource loader).
     void SetNetworkEntries(const std::vector<DebugNetEntry>& entries);
 
@@ -84,11 +85,16 @@ public:
 
     const Node *GetSelectedNode();
     bool Redraw();
+
+    void HandleEvent(const Event& event);
     bool NeedsClosing() { return NeedsClose;}
+    bool NeedsRedraw() { return redrawRequested; }
+    void Redrew() { redrawRequested = false; }
 private:
     bool NeedsClose = false;
     bool redrawView = false;
-    JavaScriptEngine *jsEngine;
+    bool redrawRequested = false;
+    JavaScriptEngine *jsEngine{};
     // --- Internal tab renderers ---------------------------------------------
     void RenderConsoleTab (int panelX, int panelY, int panelW, int panelH);
     void RenderNetworkTab (int panelX, int panelY, int panelW, int panelH);
@@ -103,6 +109,8 @@ private:
     void BuildStyleRows();
 
     // --- Platform & UI ------------------------------------------------------
+    std::shared_ptr<IRenderBackend> renderBackend;
+    WindowID renderWindow = 0;
     std::unique_ptr<Platform>  platform;
     std::unique_ptr<UIManager> ui;
     std::string jsBuffer = "";

@@ -121,20 +121,20 @@ void ViewportManager::Init() {
     Token_Timer.StartTimer();
     auto tokens = tokenizer.tokenize(response);
     Token_Timer.StopTimer();
-    Logger::Log_Verbose("Tokenizing took %f milliseconds", "ViewportManager", 0, Token_Timer.GetElapsedMilliseconds());
+    //Logger::Log_Verbose("Tokenizing took %f milliseconds", "ViewportManager", 0, Token_Timer.GetElapsedMilliseconds());
     // parse once
     Timer Parser_Timer;
     Parser_Timer.StartTimer();
     dom = parser.Parse(tokens); // no renderer dependency here
     Parser_Timer.StopTimer();
-    Logger::Log_Verbose("Parsing took %f milliseconds", "ViewportManager", 0, Parser_Timer.GetElapsedMilliseconds());
+    //Logger::Log_Verbose("Parsing took %f milliseconds", "ViewportManager", 0, Parser_Timer.GetElapsedMilliseconds());
     FindTitle();
 
     Timer Layout_Timer;
     Layout_Timer.StartTimer();
     ApplyAndLayout();
     Layout_Timer.StopTimer();
-    Logger::Log_Verbose("Layout took %f milliseconds", "ViewportManager", 0, Layout_Timer.GetElapsedMilliseconds());
+    //Logger::Log_Verbose("Layout took %f milliseconds", "ViewportManager", 0, Layout_Timer.GetElapsedMilliseconds());
 }
 
 void ViewportManager::SetLink(const std::string &Link) {
@@ -185,11 +185,9 @@ void ViewportManager::Step() {
     // ReSharper disable once CppExpressionWithoutSideEffects
     engine.Step();
 }
-std::vector<Color> ViewportManager::Render() {
+void ViewportManager::Render() {
 
     layoutRenderer.RenderRoot(layout.GetRoot());
-    renderer.Present();
-    return renderer.GetFrontBuffer();
 }
 // Assumes 'cache' is passed by reference or pointer from your ViewportManager context
 void LoadImageResourceSync(Node& imgNode, const std::string& absoluteUrl, BrowserCacheManager& cache, int layoutWidth = 0 /* only for svg's */, int layoutHeight = 0) {
@@ -311,7 +309,7 @@ void ViewportManager::ApplyAndLayout() {
     collectStyles(dom);
 
     Style_Collect_Timer.StopTimer();
-    Logger::Log_Verbose("Style Collection took %f milliseconds", "ViewportManager", 1, Style_Collect_Timer.GetElapsedMilliseconds());
+    //Logger::Log_Verbose("Style Collection took %f milliseconds", "ViewportManager", 1, Style_Collect_Timer.GetElapsedMilliseconds());
 
     // ==========================================
     // 2. Reset Styles
@@ -327,7 +325,7 @@ void ViewportManager::ApplyAndLayout() {
     resetStyles(dom);
 
     Style_Reset_Timer.StopTimer();
-    Logger::Log_Verbose("Style Reset took %f milliseconds", "ViewportManager", 1, Style_Reset_Timer.GetElapsedMilliseconds());
+    //Logger::Log_Verbose("Style Reset took %f milliseconds", "ViewportManager", 1, Style_Reset_Timer.GetElapsedMilliseconds());
 
     // ==========================================
     // 3. Apply CSS Rules
@@ -338,7 +336,7 @@ void ViewportManager::ApplyAndLayout() {
     cssParser.Apply(rules, dom, renderer.GetWidth(), renderer.GetHeight());
 
     CSS_Apply_Timer.StopTimer();
-    Logger::Log_Verbose("CSS Rule Application took %f milliseconds", "ViewportManager", 1, CSS_Apply_Timer.GetElapsedMilliseconds());
+   // Logger::Log_Verbose("CSS Rule Application took %f milliseconds", "ViewportManager", 1, CSS_Apply_Timer.GetElapsedMilliseconds());
 
     // ==========================================
     // 4. Compute Style
@@ -350,7 +348,7 @@ void ViewportManager::ApplyAndLayout() {
     ComputeStyle(dom); // you'll need to expose this from Parser
 
     Style_Compute_Timer.StopTimer();
-    Logger::Log_Verbose("Style Computation took %f milliseconds", "ViewportManager", 1, Style_Compute_Timer.GetElapsedMilliseconds());
+   // Logger::Log_Verbose("Style Computation took %f milliseconds", "ViewportManager", 1, Style_Compute_Timer.GetElapsedMilliseconds());
 
     // ==========================================
     // 5. Discover and Load Images
@@ -387,7 +385,7 @@ void ViewportManager::ApplyAndLayout() {
     discoverAndLoadImages(dom);
 
     Image_Load_Timer.StopTimer();
-    Logger::Log_Verbose("Image Discovery & Sync Loading took %f milliseconds", "ViewportManager", 1, Image_Load_Timer.GetElapsedMilliseconds());
+    //Logger::Log_Verbose("Image Discovery & Sync Loading took %f milliseconds", "ViewportManager", 1, Image_Load_Timer.GetElapsedMilliseconds());
 
     // ==========================================
     // 6. Discover Javascript
@@ -423,7 +421,7 @@ void ViewportManager::ApplyAndLayout() {
     discoverAndRunJavascript(dom);
 
     JS_Discovery_Timer.StopTimer();
-    Logger::Log_Verbose("JavaScript Discovery & Setup took %f milliseconds", "ViewportManager", 1, JS_Discovery_Timer.GetElapsedMilliseconds());
+   // Logger::Log_Verbose("JavaScript Discovery & Setup took %f milliseconds", "ViewportManager", 1, JS_Discovery_Timer.GetElapsedMilliseconds());
 
     // ==========================================
     // 7. Layout Compilation
@@ -435,15 +433,15 @@ void ViewportManager::ApplyAndLayout() {
     layoutRenderer.UpdateDom(&dom);
 
     Layout_Compilation_Timer.StopTimer();
-    Logger::Log_Verbose("Layout Compilation Update took %f milliseconds", "ViewportManager", 1, Layout_Compilation_Timer.GetElapsedMilliseconds());
+  //  Logger::Log_Verbose("Layout Compilation Update took %f milliseconds", "ViewportManager", 1, Layout_Compilation_Timer.GetElapsedMilliseconds());
 }
 
-std::vector<Color> ViewportManager::OnRender(int width, int height) {
+void ViewportManager::OnRender(int width, int height) {
 
     Step();
     Resize(width, height);
     Update();
-    return Render();
+    Render();
 }
 void ViewportManager::RunNodeScripts(Node &node) {
     if (!node.code.empty()) {

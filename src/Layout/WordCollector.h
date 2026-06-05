@@ -27,7 +27,7 @@ struct Word {
 
 class WordCollector {
 public:
-    WordCollector(Font& base, Font& italic, Font& bold, Font& boldItalic,
+    WordCollector(std::shared_ptr<Font> base, std::shared_ptr<Font> italic, std::shared_ptr<Font> bold, std::shared_ptr<Font> boldItalic,
                   std::vector<Word>& out,
                   std::function<Font&(const Style&)> resolveFont, int vw, int vh)
         : base_(base), italic_(italic), bold_(bold), boldItalic_(boldItalic)
@@ -44,10 +44,10 @@ private:
 
     static int MeasureText(Font& font, const std::string& s);
     int vw, vh;
-    Font& base_;
-    Font& italic_;
-    Font& bold_;
-    Font& boldItalic_;
+    std::shared_ptr<Font> base_;
+    std::shared_ptr<Font> italic_;
+    std::shared_ptr<Font> bold_;
+    std::shared_ptr<Font> boldItalic_;
     std::vector<Word>& out_;
     std::function<Font&(const Style&)> resolveFont_;
     bool pendingSpace_ = false;

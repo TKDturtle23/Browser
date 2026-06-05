@@ -15,7 +15,7 @@
 
 
 
-LayoutGenerator::LayoutGenerator(Renderer& renderer)
+LayoutGenerator::LayoutGenerator(RendererSurface& renderer)
     : renderer(renderer)
 
 {}
@@ -65,7 +65,7 @@ void LayoutGenerator::ApplyMarginCentering(const Style& s, BoxEdges& margin, int
         margin.right = remaining - margin.left;
     }
 }
-LayoutBox LayoutGenerator::LayoutBlock(Node& node, int containerX, int containerY, int containerWidth) {
+LayoutBox LayoutGenerator::LayoutBlock(Node& node, int containerX, int containerY, int containerWidth, int containerHeight) {
     const Style& s = node.computedStyle;
 
     // 1. Resolve Box Model Geometry
@@ -96,10 +96,10 @@ LayoutBox LayoutGenerator::LayoutBlock(Node& node, int containerX, int container
     int contentX     = box.x + border.left + padding.left;
     int contentY     = box.y + border.top  + padding.top;
     int contentWidth = std::max(0, box.width - padding.Horizontal() - border.Horizontal());
-
+    int contentHeight = std::max(0, containerHeight - padding.Vertical() - border.Vertical());
     // 4. Layout Children via BFC
     auto ctx = std::make_unique<BlockFormattingContext>(*this);
-    int endY = ctx->Layout(node, box, contentX, contentY, contentWidth);
+    int endY = ctx->Layout(node, box, contentX, contentY, contentWidth, contentHeight);
 
     // 5. Shrink-to-Fit Pass
     bool shrinkToFit = (node.tag == "span" || node.tag == "button");
@@ -119,7 +119,7 @@ LayoutBox LayoutGenerator::LayoutBlock(Node& node, int containerX, int container
 
     // 6. Resolve Height
     if (s.height.unit != LengthUnit::Auto) {
-        int computedContent = ResolveFromWindow(s.height, 0);
+        int computedContent = ResolveFromWindow(s.height, containerHeight);
         box.height = (s.boxSizing == BoxSizing::ContentBox)
                      ? computedContent + padding.Vertical() + border.Vertical()
                      : computedContent;
@@ -159,7 +159,7 @@ void LayoutGenerator::Update(Node& dom) {
     assert(body && "DOM must contain a <body> element");
 
     int bodyMarginTop = ResolveLength(body->computedStyle.margin_top, renderer.GetWidth(), renderer.GetWidth(), renderer.GetHeight());
-    root = LayoutBlock(*body, 0, bodyMarginTop, renderer.GetWidth());
+    root = LayoutBlock(*body, 0, bodyMarginTop, renderer.GetWidth(), renderer.GetHeight());
 }
 
 

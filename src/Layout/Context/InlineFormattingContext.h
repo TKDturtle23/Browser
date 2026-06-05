@@ -19,7 +19,7 @@ public:
                     LayoutBox& parent,
                     int startX, int startY, int containerWidth) const;
 
-    int Layout(Node&, LayoutBox&, int, int contentY, int) override {
+    int Layout(Node&, LayoutBox&, int, int contentY, int, int contentHeight) override {
         return contentY;
     }
 

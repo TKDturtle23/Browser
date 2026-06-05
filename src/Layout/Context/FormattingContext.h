@@ -18,7 +18,7 @@ public:
                        LayoutBox& parent,
                        int contentX,
                        int contentY,
-                       int contentWidth) = 0;
+                       int contentWidth, int contentHeight) = 0;
 };
 
 

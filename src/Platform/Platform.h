@@ -57,7 +57,9 @@ enum class Key {
     // Punctuation / Miscellaneous
     Semicolon, Slash, Equal, Hyphen, LBracket, RBracket, Comma, Period, Quote, Backquote, Backslash
 };
+using WindowID = uint32_t;
 struct Event {
+    WindowID window = 0;
     EventType type = EventType::None;
 
     int x = 0;              // Mouse X coordinate
@@ -85,10 +87,8 @@ public:
 
     virtual void CloseWindow() = 0;
 
-    virtual void Present(
-        const std::vector<Color>& pixels
-    ) = 0;
-
+    virtual void* GetNativeHandle() const = 0;
+    virtual void Present() = 0;
     virtual bool PollEvent(
         Event& event
     ) = 0;

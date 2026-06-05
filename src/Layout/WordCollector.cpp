@@ -4,6 +4,7 @@
 
 #include "WordCollector.h"
 #include "LayoutHelper.h"
+#include "Render/Backend/IRendererBackend.h"
 void WordCollector::Visit(Node &node) {
     if (IsLayoutIgnored(node)) return;
 
@@ -20,7 +21,7 @@ void WordCollector::Visit(Node &node) {
     }
 
     Font& font = resolveFont_(node.computedStyle);
-    font.SetSize(ResolveFontSize(node.computedStyle.font_size, vw, vh));
+    font.SetSize(IRenderBackend::GetRenderBackend().get(), ResolveFontSize(node.computedStyle.font_size, vw, vh));
 
     for (const auto& child : node.children) {
         if (child->type == NodeType::Element
@@ -59,7 +60,7 @@ void WordCollector::VisitImage(Node &node) {
 void WordCollector::VisitText(Node &node) {
     const Style& style = (node.parent) ? node.parent->computedStyle : node.computedStyle;
     Font& font = resolveFont_(style);
-    font.SetSize(ResolveFontSize(style.font_size, vw, vh));
+    font.SetSize(IRenderBackend::GetRenderBackend().get(), ResolveFontSize(style.font_size, vw, vh));
 
     const std::string& t = node.text;
     size_t i = 0;
@@ -97,14 +98,14 @@ int WordCollector::MeasureText(Font &font, const std::string &s) {
     for (size_t i = 0; i < s.size() - 1; ++i) {
         char c = s[i];
         if (prev) w += font.GetKerning(c, prev).x >> 6;
-        w += font.GetGlyph(c).advance;
+        w += font.GetGlyph(IRenderBackend::GetRenderBackend().get(), c).advance;
         prev = c;
     }
 
     char last = s.back();
     if (prev) w += font.GetKerning(last, prev).x >> 6;
 
-    const auto& g = font.GetGlyph(last);
+    const auto& g = font.GetGlyph(IRenderBackend::GetRenderBackend().get(), last);
     w += std::max(g.advance, g.bearingX + g.width);
 
     return w;

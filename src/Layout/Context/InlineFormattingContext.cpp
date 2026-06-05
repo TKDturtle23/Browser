@@ -21,9 +21,9 @@ int InlineFormattingContext::LayoutRoots(std::vector<Node *> &roots, LayoutBox &
     );
     for (Node* n : roots) wc.Visit(*n);
 
-    Font& baseFont   = group.base;
-    FontMetrics base = baseFont.GetMetrics();
-    int spaceWidth   = baseFont.GetGlyph(' ').advance;
+    std::shared_ptr<Font> baseFont   = group.base;
+    FontMetrics base = baseFont->GetMetrics();
+    int spaceWidth   = baseFont->GetGlyph(IRenderBackend::GetRenderBackend().get(), ' ').advance;
     int rightEdge    = startX + containerWidth;
 
     auto MakeLine = [&](int y) {
@@ -76,20 +76,20 @@ int InlineFormattingContext::LayoutRoots(std::vector<Node *> &roots, LayoutBox &
             if (doEllipsis) {
                 Font* font = nullptr;
                 FontManager::PrepareFontContext(s, w.fontSize, font, lr_.GetWidth(), lr_.GetHeight());
-                int ellipsisWidth  = font->GetGlyph('.').advance * 3;
+                int ellipsisWidth  = font->GetGlyph(IRenderBackend::GetRenderBackend().get(), '.').advance * 3;
                 int availableWidth = rightEdge - (cursorX + gap) - ellipsisWidth;
 
                 std::string truncated = w.text;
                 while (!truncated.empty()) {
                     int textW = 0;
-                    for (char c : truncated) textW += font->GetGlyph(c).advance;
+                    for (char c : truncated) textW += font->GetGlyph(IRenderBackend::GetRenderBackend().get(), c).advance;
                     if (textW <= availableWidth) break;
                     truncated.pop_back();
                 }
                 truncated += "...";
 
                 int finalWidth = 0;
-                for (char c : truncated) finalWidth += font->GetGlyph(c).advance;
+                for (char c : truncated) finalWidth += font->GetGlyph(IRenderBackend::GetRenderBackend().get(), c).advance;
 
                 LayoutBox run;
                 run.kind     = BoxKind::TextRun;
@@ -169,9 +169,9 @@ void InlineFormattingContext::FinalizeLineMetrics(LayoutBox &line, LayoutGenerat
     auto group = FontManager::GetFontGroup("Arial");
     maxH = std::max(maxH, maxAscent + maxDescent);
     if (maxH == 0) {
-        maxH       = group.base.GetMetrics().lineHeight;
-        maxAscent  = group.base.GetMetrics().ascent;
-        maxDescent = group.base.GetMetrics().descent;
+        maxH       = group.base->GetMetrics().lineHeight;
+        maxAscent  = group.base->GetMetrics().ascent;
+        maxDescent = group.base->GetMetrics().descent;
     }
 
     line.height      = maxH;

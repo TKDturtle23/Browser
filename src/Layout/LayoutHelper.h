@@ -8,12 +8,11 @@
 
 #include "Node.h"
 #include "Text/Font.h"
-
 struct FontGroup {
-    Font base;
-    Font italic;
-    Font bold;
-    Font boldItalic;
+    std::shared_ptr<Font> base;
+    std::shared_ptr<Font> bold;
+    std::shared_ptr<Font> italic;
+    std::shared_ptr<Font> boldItalic;
 };
 enum class BoxKind {
     Block,

@@ -18,6 +18,7 @@ public:
 
     static void setFallbackFont(Font* font);
 
+
 private:
     static Font* fallbackFont;
     static std::unordered_map<std::string, FontGroup> Fonts;

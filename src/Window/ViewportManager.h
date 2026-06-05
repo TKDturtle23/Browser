@@ -27,13 +27,14 @@ public:
 
     void Step();
 
-    std::vector<Color> Render();
+    void Render();
 
-    std::vector<Color> OnRender(int width, int height); // for resizing
+    void OnRender(int width, int height); // for resizing
     void RunNodeScripts(Node &node);
 
     int GetWidth() {return renderer.GetWidth(); }
     int GetHeight() {return renderer.GetHeight(); }
+    RendererSurface& GetRenderer() { return renderer; }
 
     void StartScripts();
     const Node* GetDOMRoot() {return &dom; }
@@ -47,7 +48,7 @@ private:
     void ApplyAndLayout();
 
     JSContext* tabContext; // Each tab retains its unique context key handler pointer
-    Renderer renderer;
+    RendererSurface renderer;
     Tokenizer tokenizer;
     Parser parser;
     LayoutGenerator layout;

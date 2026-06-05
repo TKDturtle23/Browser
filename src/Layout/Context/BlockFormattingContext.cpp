@@ -6,7 +6,7 @@
 #include "InlineFormattingContext.h"
 #include "Layout/LayoutGenerator.h"
 
-int BlockFormattingContext::Layout(Node &node, LayoutBox &parent, int contentX, int contentY, int contentWidth) {
+int BlockFormattingContext::Layout(Node &node, LayoutBox &parent, int contentX, int contentY, int contentWidth, int contentHeight) {
     int cursorY        = contentY;
     int prevMarginBottom = 0;
     auto& kids   = node.children;
@@ -55,7 +55,7 @@ int BlockFormattingContext::Layout(Node &node, LayoutBox &parent, int contentX, 
             int collapsedMargin = std::max(prevMarginBottom, marginTop);
             cursorY += collapsedMargin;
 
-            LayoutBox cb = lr_.LayoutBlock(child, contentX, cursorY, contentWidth);
+            LayoutBox cb = lr_.LayoutBlock(child, contentX, cursorY, contentWidth, contentHeight);
             cursorY      = cb.y + cb.height;
             prevMarginBottom = ResolveLength(s.margin_bottom, contentWidth, lr_.GetWidth(), lr_.GetHeight());
 

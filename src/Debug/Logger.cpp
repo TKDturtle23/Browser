@@ -1,6 +1,8 @@
 #include "Logger.h"
 #include <cstdarg>
 #include <cstdio>
+#include <iostream>
+#include <ostream>
 
 void Logger::Init() {
     log_entries.clear();
@@ -31,6 +33,7 @@ void Logger::LogInternal_Va(LogLevel level, const std::string& format, const std
     std::string formatted_msg(buf.data(), size);
     log_entries.push_back({formatted_msg, source, level});
     log_buffer.push_back({formatted_msg, source, level});
+    std::cout << formatted_msg << std::endl;
 }
 
 // Public API mappings - va_start now safely targets 'source'
