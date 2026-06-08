@@ -17,7 +17,6 @@
 
 LayoutGenerator::LayoutGenerator(RendererSurface& renderer)
     : renderer(renderer)
-
 {}
 
 
@@ -33,10 +32,10 @@ BoxEdges LayoutGenerator::ResolvePadding(const Style& s, int containerWidth) con
 
 BoxEdges LayoutGenerator::ResolveBorders(const Style& s) const {
     return {
-        GetVisibleBorderWidth(s.BorderTop,    renderer.GetWidth(), renderer.GetHeight()),
-        GetVisibleBorderWidth(s.BorderRight,   renderer.GetWidth(), renderer.GetHeight()),
-        GetVisibleBorderWidth(s.BorderBottom,  renderer.GetWidth(), renderer.GetHeight()),
-        GetVisibleBorderWidth(s.BorderLeft,    renderer.GetWidth(), renderer.GetHeight())
+        GetVisibleBorderWidth(s.borderTop,    renderer.GetWidth(), renderer.GetHeight()),
+        GetVisibleBorderWidth(s.borderRight,   renderer.GetWidth(), renderer.GetHeight()),
+        GetVisibleBorderWidth(s.borderBottom,  renderer.GetWidth(), renderer.GetHeight()),
+        GetVisibleBorderWidth(s.borderLeft,    renderer.GetWidth(), renderer.GetHeight())
     };
 }
 
@@ -65,7 +64,8 @@ void LayoutGenerator::ApplyMarginCentering(const Style& s, BoxEdges& margin, int
         margin.right = remaining - margin.left;
     }
 }
-LayoutBox LayoutGenerator::LayoutBlock(Node& node, int containerX, int containerY, int containerWidth, int containerHeight) {
+
+BlockResult LayoutGenerator::LayoutBlock(Node& node, int containerX, int containerY, int containerWidth, int containerHeight) {
     const Style& s = node.computedStyle;
 
     // 1. Resolve Box Model Geometry
@@ -93,13 +93,32 @@ LayoutBox LayoutGenerator::LayoutBlock(Node& node, int containerX, int container
     box.x = containerX + margin.left;
     box.y = containerY;
 
-    int contentX     = box.x + border.left + padding.left;
-    int contentY     = box.y + border.top  + padding.top;
-    int contentWidth = std::max(0, box.width - padding.Horizontal() - border.Horizontal());
+    int contentX      = box.x + border.left + padding.left;
+    int contentY      = box.y + border.top  + padding.top;
+    int contentWidth  = std::max(0, box.width - padding.Horizontal() - border.Horizontal());
     int contentHeight = std::max(0, containerHeight - padding.Vertical() - border.Vertical());
+
     // 4. Layout Children via BFC
     auto ctx = std::make_unique<BlockFormattingContext>(*this);
     int endY = ctx->Layout(node, box, contentX, contentY, contentWidth, contentHeight);
+
+    // Retrieve the last child's trailing margin.
+    // If this box has no bottom border or padding, the margin collapses upward
+    // into the parent BFC (CSS §8.3.1). We signal this via escapedMarginBottom
+    // so the parent BFC can fold it into its own prevMarginBottom and perform
+    // the three-way collapse with the next sibling's margin-top.
+    // If there IS a bottom edge, the margin is contained — add it to endY so
+    // it contributes to this box's height, and report zero escaped margin.
+    int trailingMargin   = ctx->GetLastChildMarginBottom();
+    bool hasBottomEdge   = (padding.bottom > 0 || border.bottom > 0);
+    int escapedMargin    = 0;
+
+    if (hasBottomEdge) {
+        endY += trailingMargin;   // contained: add to content height
+        escapedMargin = 0;
+    } else {
+        escapedMargin = trailingMargin;  // escapes: do NOT add to endY
+    }
 
     // 5. Shrink-to-Fit Pass
     bool shrinkToFit = (node.tag == "span" || node.tag == "button");
@@ -123,6 +142,8 @@ LayoutBox LayoutGenerator::LayoutBlock(Node& node, int containerX, int container
         box.height = (s.boxSizing == BoxSizing::ContentBox)
                      ? computedContent + padding.Vertical() + border.Vertical()
                      : computedContent;
+        // Explicit height contains the margin entirely — nothing escapes.
+        escapedMargin = 0;
     } else {
         box.height = (endY - contentY) + padding.Vertical() + border.Vertical();
     }
@@ -133,16 +154,17 @@ LayoutBox LayoutGenerator::LayoutBlock(Node& node, int containerX, int container
 
     // 7. Write Back Debug Data
     auto& rd = box.node->renderData;
-    rd.box = { box.x, box.y, box.width, box.height };
+    rd.box = { (float)box.x, (float)box.y, (float)box.width, (float)box.height };
 
-    rd.margin_top    = margin.top;    rd.margin_right  = margin.right;
-    rd.margin_bottom = margin.bottom; rd.margin_left   = margin.left;
+    rd.resolved_margin_top    = margin.top;    rd.resolved_margin_right  = margin.right;
+    rd.resolved_margin_bottom = margin.bottom; rd.resolved_margin_left   = margin.left;
 
-    rd.padding_top    = padding.top;    rd.padding_right  = padding.right;
-    rd.padding_bottom = padding.bottom; rd.padding_left   = padding.left;
+    rd.resolved_padding_top    = padding.top;    rd.resolved_padding_right  = padding.right;
+    rd.resolved_padding_bottom = padding.bottom; rd.resolved_padding_left   = padding.left;
 
-    return box;
+    return { std::move(box), escapedMargin };
 }
+
 void LayoutGenerator::Update(Node& dom) {
     body = nullptr;
 
@@ -159,7 +181,10 @@ void LayoutGenerator::Update(Node& dom) {
     assert(body && "DOM must contain a <body> element");
 
     int bodyMarginTop = ResolveLength(body->computedStyle.margin_top, renderer.GetWidth(), renderer.GetWidth(), renderer.GetHeight());
-    root = LayoutBlock(*body, 0, bodyMarginTop, renderer.GetWidth(), renderer.GetHeight());
+    // Update() is the root of the layout tree — nothing above it to collapse
+    // into, so we discard escapedMarginBottom here intentionally.
+    BlockResult result = LayoutBlock(*body, 0, bodyMarginTop, renderer.GetWidth(), renderer.GetHeight());
+    root = std::move(result.box);
 }
 
 

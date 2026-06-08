@@ -168,7 +168,75 @@ static inline void DrawPixel(
     dst.b = ((color.b * color.a) + (dst.b * (255 - color.a))) / 255;
     dst.a = 255;
 }
+// Internal rounded rectangle filler helper routine used back-end side
+static inline void FillRectRoundedInternal(
+    SoftwareRenderTarget& target,
+    int rx, int ry, int rw, int rh,
+    int tl, int tr, int bl, int br, Color color
+) {
+    // Clamp radii to prevent overlapping allocations or logic corruption
+    tl = std::max(0, std::min(tl, std::min(rw, rh) / 2));
+    tr = std::max(0, std::min(tr, std::min(rw - tl, rh) / 2));
+    bl = std::max(0, std::min(bl, std::min(rw, rh - tl) / 2));
+    br = std::max(0, std::min(br, std::min(rw - bl, rh - tr) / 2));
 
+    const int startY = std::max(0, ry);
+    const int endY   = std::min(target.height, ry + rh);
+
+    if (rw <= 0 || rh <= 0 || startY >= endY || color.a == 0) {
+        return;
+    }
+
+    for (int py = startY; py < endY; py++) {
+        // Relative vertical offset from the top and bottom bounds of the rect
+        int localY = py - ry;
+
+        // Calculate dynamic edge insets based on circular quadrant positions
+        int leftInset = 0;
+        int rightInset = 0;
+
+        // 1. Top Section Corners
+        if (localY < tl && tl > 0) {
+            int dy = tl - localY;
+            leftInset = tl - static_cast<int>(std::sqrt(tl * tl - dy * dy));
+        }
+        if (localY < tr && tr > 0) {
+            int dy = tr - localY;
+            rightInset = tr - static_cast<int>(std::sqrt(tr * tr - dy * dy));
+        }
+
+        // 2. Bottom Section Corners
+        if (localY >= (rh - bl) && bl > 0) {
+            int dy = localY - (rh - bl);
+            leftInset = bl - static_cast<int>(std::sqrt(bl * bl - dy * dy));
+        }
+        if (localY >= (rh - br) && br > 0) {
+            int dy = localY - (rh - br);
+            rightInset = br - static_cast<int>(std::sqrt(br * br - dy * dy));
+        }
+
+        // Clip scanning columns per line to target safety dimensions
+        int startX = std::max(0, rx + leftInset);
+        int endX   = std::min(target.width, rx + rw - rightInset);
+
+        if (startX >= endX) {
+            continue;
+        }
+
+        Color* row = &target.backBuffer[py * target.width];
+        for (int px = startX; px < endX; px++) {
+            if (color.a == 255) {
+                row[px] = color;
+            } else {
+                Color& dst = row[px];
+                dst.r = ((color.r * color.a) + (dst.r * (255 - color.a))) / 255;
+                dst.g = ((color.g * color.a) + (dst.g * (255 - color.a))) / 255;
+                dst.b = ((color.b * color.a) + (dst.b * (255 - color.a))) / 255;
+                dst.a = 255;
+            }
+        }
+    }
+}
 // Internal line segment drawing helper routine used back-end side
 // to keep high-level primitives compact and efficient.
 static inline void DrawLineInternal(
@@ -277,7 +345,12 @@ void SoftwareBackend::ExecuteCommand(
         FillRectInternal(target, r.x, r.y, r.w, r.h, r.color);
         break;
     }
-
+    case RenderCommandType::FillRectRounded:
+        {
+            const auto& r = cmd.fillRectRounded;
+            FillRectRoundedInternal(target, r.x, r.y, r.w, r.h, r.tl, r.tr, r.bl, r.br, r.color);
+            break;
+        }
     case RenderCommandType::DrawLine:
     {
         const auto& l = cmd.drawLine;

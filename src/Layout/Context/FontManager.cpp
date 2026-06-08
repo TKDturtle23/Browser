@@ -41,7 +41,7 @@ FontMetrics FontManager::PrepareFontContext(
 
     int size = (forcedSize > 0)
         ? forcedSize
-        : ResolveFontSize(s.font_size, rendererWidth, rendererHeight);
+        : ResolveFontSize(s.font_size, rendererWidth, rendererHeight, 16);
 
     if (size <= 0)
         size = 16;

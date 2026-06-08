@@ -137,35 +137,52 @@ void LayoutRenderer::RenderBlock(const LayoutBox& box) {
     const Style& s = box.node->computedStyle;
 
     if (s.hasBackground)
-        renderer.FillRect(box.x, box.y, box.width, box.height, s.backgroundColor);
+    {
+        // Resolve each corner length relative to the element's width (or height)
+        int tl = ResolveLength(s.border_radius_top_left,     static_cast<int>(box.width), renderer.GetWidth(), renderer.GetHeight());
+        int tr = ResolveLength(s.border_radius_top_right,    static_cast<int>(box.width), renderer.GetWidth(), renderer.GetHeight());
+        int br = ResolveLength(s.border_radius_bottom_right, static_cast<int>(box.width), renderer.GetWidth(), renderer.GetHeight());
+        int bl = ResolveLength(s.border_radius_bottom_left,  static_cast<int>(box.width), renderer.GetWidth(), renderer.GetHeight());
 
-    int bLeft   = GetVisibleBorderWidth(s.BorderLeft, renderer.GetWidth(), renderer.GetHeight());
-    int bRight  = GetVisibleBorderWidth(s.BorderRight, renderer.GetWidth(), renderer.GetHeight());
-    int bTop    = GetVisibleBorderWidth(s.BorderTop, renderer.GetWidth(), renderer.GetHeight());
-    int bBottom = GetVisibleBorderWidth(s.BorderBottom, renderer.GetWidth(), renderer.GetHeight());
+        renderer.FillRectRounded(
+            box.x,
+            box.y,
+            box.width,
+            box.height,
+            tl,
+            tr,
+            br,
+            bl,
+            s.backgroundColor
+        );
+    }
+    int bLeft   = GetVisibleBorderWidth(s.borderLeft, renderer.GetWidth(), renderer.GetHeight());
+    int bRight  = GetVisibleBorderWidth(s.borderRight, renderer.GetWidth(), renderer.GetHeight());
+    int bTop    = GetVisibleBorderWidth(s.borderTop, renderer.GetWidth(), renderer.GetHeight());
+    int bBottom = GetVisibleBorderWidth(s.borderBottom, renderer.GetWidth(), renderer.GetHeight());
 
-    if (bTop    > 0) RenderSingleBorderEdge(s.BorderTop,    box.x,                      box.x + box.width,      box.y,                          true);
-    if (bBottom > 0) RenderSingleBorderEdge(s.BorderBottom, box.x,                      box.x + box.width,      box.y + box.height - bBottom,   true);
-    if (bLeft   > 0) RenderSingleBorderEdge(s.BorderLeft,   box.y + bTop,               box.y + box.height - bBottom, box.x,                    false);
-    if (bRight  > 0) RenderSingleBorderEdge(s.BorderRight,  box.y + bTop,               box.y + box.height - bBottom, box.x + box.width - bRight, false);
+    if (bTop    > 0) RenderSingleBorderEdge(s.borderTop,    box.x,                      box.x + box.width,      box.y,                          true);
+    if (bBottom > 0) RenderSingleBorderEdge(s.borderBottom, box.x,                      box.x + box.width,      box.y + box.height - bBottom,   true);
+    if (bLeft   > 0) RenderSingleBorderEdge(s.borderLeft,   box.y + bTop,               box.y + box.height - bBottom, box.x,                    false);
+    if (bRight  > 0) RenderSingleBorderEdge(s.borderRight,  box.y + bTop,               box.y + box.height - bBottom, box.x + box.width - bRight, false);
 }
 
 
-void LayoutRenderer::RenderSingleBorderEdge(const Border_side& edge, int start, int end, int fixedCoord, bool isHorizontal) {
+void LayoutRenderer::RenderSingleBorderEdge(const BorderSide& edge, int start, int end, int fixedCoord, bool isHorizontal) {
     BorderStyle style = edge.borderStyle;
     Color color       = edge.borderColor;
     int thickness     = GetVisibleBorderWidth(edge, renderer.GetWidth(), renderer.GetHeight());
 
-    if (style == BorderStyle::none || style == BorderStyle::hidden || thickness <= 0)
+    if (style == BorderStyle::None || style == BorderStyle::Hidden || thickness <= 0)
         return;
 
     switch (style) {
-        case BorderStyle::solid: {
+        case BorderStyle::Solid: {
             if (isHorizontal) renderer.FillRect(start, fixedCoord, end - start, thickness, color);
             else              renderer.FillRect(fixedCoord, start, thickness, end - start, color);
             break;
         }
-        case BorderStyle::double_border: {
+        case BorderStyle::DoubleBorder: {
             int line = std::max(1, thickness / 3);
             int gap  = std::max(1, thickness - line * 2);
             if (isHorizontal) {
@@ -177,7 +194,7 @@ void LayoutRenderer::RenderSingleBorderEdge(const Border_side& edge, int start, 
             }
             break;
         }
-        case BorderStyle::dotted: {
+        case BorderStyle::Dotted: {
             int radius  = std::max(1, thickness / 2);
             int spacing = thickness * 2;
             for (int pos = start + radius; pos <= end - radius; pos += spacing) {
@@ -187,7 +204,7 @@ void LayoutRenderer::RenderSingleBorderEdge(const Border_side& edge, int start, 
             }
             break;
         }
-        case BorderStyle::dashed: {
+        case BorderStyle::Dashed: {
             int dashLen = std::max(4, thickness * 3);
             int gapLen  = std::max(2, thickness * 2);
             for (int pos = start; pos < end; pos += dashLen + gapLen) {
@@ -214,8 +231,8 @@ void LayoutRenderer::RenderLine(const LayoutBox& box, int textHeight) {
     for (const auto& run : box.children) {
         if (!run.node || !run.node->parent) continue;
         const Style& s = run.node->parent->computedStyle;
-        thickness  = ResolveLength(s.TextDecorationThickness, textHeight, renderer.GetWidth(), renderer.GetHeight());
-        decorColor = s.TextDecorationColor;
+        thickness  = ResolveLength(s.textDecorationThickness, textHeight, renderer.GetWidth(), renderer.GetHeight());
+        decorColor = s.textDecorationColor;
         decorStyle = s.textDecorationStyle;
 
         if      (s.textDecoration == TextDecoration::Underline)   { underline   = true; break; }

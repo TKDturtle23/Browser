@@ -1,6 +1,7 @@
 #include "CSSParser.h"
 #include "CSSTokenizer.h"
 #include <algorithm>
+#include <array>
 #include <cctype>
 #include <charconv>
 #include <iostream>
@@ -210,44 +211,248 @@ static std::optional<CSSLength> ParseCSSLength(std::string_view val, int vw, int
     return std::nullopt;
 }
 
-static std::optional<Color> ParseColor(std::string_view val) {
-    if (val.empty()) return std::nullopt;
 
-    if (val[0] == '#' && val.size() == 4) {
-        auto expand = [](char c) -> uint8_t {
-            int v = std::isdigit(c) ? c - '0' : std::tolower(c) - 'a' + 10;
-            return static_cast<uint8_t>(v * 17);
-        };
-        return Color(expand(val[3]), expand(val[2]), expand(val[1]));
-    }
+struct TrieNode {
+    std::array<TrieNode*, 256> next{};
+    std::optional<Color> value = std::nullopt;
 
-    if (val[0] == '#' && val.size() == 7) {
-        auto hex2 = [](char high, char low) -> uint8_t {
-            auto h = (high >= 'a') ? (high - 'a' + 10) : ((high >= 'A') ? (high - 'A' + 10) : (high - '0'));
-            auto l = (low >= 'a') ? (low - 'a' + 10) : ((low >= 'A') ? (low - 'A' + 10) : (low - '0'));
-            return (h << 4) | l;
-        };
-        return Color(hex2(val[1], val[2]), hex2(val[3], val[4]), hex2(val[5], val[6]));
-    }
+    constexpr TrieNode() : next{} {}
+};
 
-    // Fast static string mappings
-    if (val == "white") return Color(255, 255, 255);
-    if (val == "black") return Color(0, 0, 0);
-    if (val == "red")   return Color(0, 0, 255); // BGR implementation preserved
-    if (val == "green") return Color(0, 128, 0);
-    if (val == "blue")  return Color(255, 0, 0);
-    if (val == "gray" || val == "grey") return Color(128, 128, 128);
-    if (val == "yellow") return Color(0, 255, 255);
-    if (val == "orange") return Color(0, 165, 255);
-
-    return std::nullopt;
+// ---------- COLOR ENCODING ----------
+static const Color RGB(uint32_t hex) {
+    uint8_t r = (hex >> 16) & 0xFF;
+    uint8_t g = (hex >> 8)  & 0xFF;
+    uint8_t b = (hex)       & 0xFF;
+    return Color(b, g, r); // BGR
 }
 
+// ---------- TRIE ROOT ----------
+static TrieNode g_root;
+
+// ---------- INSERT (compile-time friendly initializer) ----------
+const void Insert(TrieNode& root, std::string_view key, Color color) {
+    TrieNode* node = &root;
+
+    for (char c : key) {
+        auto uc = static_cast<unsigned char>(c);
+
+        if (!node->next[uc]) {
+            node->next[uc] = new TrieNode();
+        }
+        node = node->next[uc];
+    }
+
+    node->value = color;
+}
+static bool built = false;
+// ---------- BUILD TABLE ----------
+static void BuildTrie() {
+    Insert(g_root, "aliceblue", RGB(0xF0F8FF));
+    Insert(g_root, "antiquewhite", RGB(0xFAEBD7));
+    Insert(g_root, "aqua", RGB(0x00FFFF));
+    Insert(g_root, "aquamarine", RGB(0x7FFFD4));
+    Insert(g_root, "azure", RGB(0xF0FFFF));
+    Insert(g_root, "beige", RGB(0xF5F5DC));
+    Insert(g_root, "bisque", RGB(0xFFE4C4));
+    Insert(g_root, "black", RGB(0x000000));
+    Insert(g_root, "blanchedalmond", RGB(0xFFEBCD));
+    Insert(g_root, "blue", RGB(0x0000FF));
+    Insert(g_root, "blueviolet", RGB(0x8A2BE2));
+    Insert(g_root, "brown", RGB(0xA52A2A));
+    Insert(g_root, "burlywood", RGB(0xDEB887));
+    Insert(g_root, "cadetblue", RGB(0x5F9EA0));
+    Insert(g_root, "chartreuse", RGB(0x7FFF00));
+    Insert(g_root, "chocolate", RGB(0xD2691E));
+    Insert(g_root, "coral", RGB(0xFF7F50));
+    Insert(g_root, "cornflowerblue", RGB(0x6495ED));
+    Insert(g_root, "cornsilk", RGB(0xFFF8DC));
+    Insert(g_root, "crimson", RGB(0xDC143C));
+    Insert(g_root, "cyan", RGB(0x00FFFF));
+    Insert(g_root, "darkblue", RGB(0x00008B));
+    Insert(g_root, "darkcyan", RGB(0x008B8B));
+    Insert(g_root, "darkgoldenrod", RGB(0xB8860B));
+    Insert(g_root, "darkgray", RGB(0xA9A9A9));
+    Insert(g_root, "darkgrey", RGB(0xA9A9A9));
+    Insert(g_root, "darkgreen", RGB(0x006400));
+    Insert(g_root, "darkkhaki", RGB(0xBDB76B));
+    Insert(g_root, "darkmagenta", RGB(0x8B008B));
+    Insert(g_root, "darkolivegreen", RGB(0x556B2F));
+    Insert(g_root, "darkorange", RGB(0xFF8C00));
+    Insert(g_root, "darkorchid", RGB(0x9932CC));
+    Insert(g_root, "darkred", RGB(0x8B0000));
+    Insert(g_root, "darksalmon", RGB(0xE9967A));
+    Insert(g_root, "darkseagreen", RGB(0x8FBC8F));
+    Insert(g_root, "darkslateblue", RGB(0x483D8B));
+    Insert(g_root, "darkslategray", RGB(0x2F4F4F));
+    Insert(g_root, "darkslategrey", RGB(0x2F4F4F));
+    Insert(g_root, "darkturquoise", RGB(0x00CED1));
+    Insert(g_root, "darkviolet", RGB(0x9400D3));
+    Insert(g_root, "deeppink", RGB(0xFF1493));
+    Insert(g_root, "deepskyblue", RGB(0x00BFFF));
+    Insert(g_root, "dimgray", RGB(0x696969));
+    Insert(g_root, "dimgrey", RGB(0x696969));
+    Insert(g_root, "dodgerblue", RGB(0x1E90FF));
+    Insert(g_root, "firebrick", RGB(0xB22222));
+    Insert(g_root, "floralwhite", RGB(0xFFFAF0));
+    Insert(g_root, "forestgreen", RGB(0x228B22));
+    Insert(g_root, "fuchsia", RGB(0xFF00FF));
+    Insert(g_root, "gainsboro", RGB(0xDCDCDC));
+    Insert(g_root, "ghostwhite", RGB(0xF8F8FF));
+    Insert(g_root, "gold", RGB(0xFFD700));
+    Insert(g_root, "goldenrod", RGB(0xDAA520));
+    Insert(g_root, "gray", RGB(0x808080));
+    Insert(g_root, "grey", RGB(0x808080));
+    Insert(g_root, "green", RGB(0x008000));
+    Insert(g_root, "greenyellow", RGB(0xADFF2F));
+    Insert(g_root, "honeydew", RGB(0xF0FFF0));
+    Insert(g_root, "hotpink", RGB(0xFF69B4));
+    Insert(g_root, "indianred", RGB(0xCD5C5C));
+    Insert(g_root, "indigo", RGB(0x4B0082));
+    Insert(g_root, "ivory", RGB(0xFFFFF0));
+    Insert(g_root, "khaki", RGB(0xF0E68C));
+    Insert(g_root, "lavender", RGB(0xE6E6FA));
+    Insert(g_root, "lavenderblush", RGB(0xFFF0F5));
+    Insert(g_root, "lawngreen", RGB(0x7CFC00));
+    Insert(g_root, "lemonchiffon", RGB(0xFFFACD));
+    Insert(g_root, "lightblue", RGB(0xADD8E6));
+    Insert(g_root, "lightcoral", RGB(0xF08080));
+    Insert(g_root, "lightcyan", RGB(0xE0FFFF));
+    Insert(g_root, "lightgoldenrodyellow", RGB(0xFAFAD2));
+    Insert(g_root, "lightgray", RGB(0xD3D3D3));
+    Insert(g_root, "lightgrey", RGB(0xD3D3D3));
+    Insert(g_root, "lightgreen", RGB(0x90EE90));
+    Insert(g_root, "lightpink", RGB(0xFFB6C1));
+    Insert(g_root, "lightsalmon", RGB(0xFFA07A));
+    Insert(g_root, "lightseagreen", RGB(0x20B2AA));
+    Insert(g_root, "lightskyblue", RGB(0x87CEFA));
+    Insert(g_root, "lightgray", RGB(0x778899));
+    Insert(g_root, "lightslategray", RGB(0x778899));
+    Insert(g_root, "lightslategrey", RGB(0x778899));
+    Insert(g_root, "lightsteelblue", RGB(0xB0C4DE));
+    Insert(g_root, "lightyellow", RGB(0xFFFFE0));
+    Insert(g_root, "lime", RGB(0x00FF00));
+    Insert(g_root, "limegreen", RGB(0x32CD32));
+    Insert(g_root, "linen", RGB(0xFAF0E6));
+    Insert(g_root, "magenta", RGB(0xFF00FF));
+    Insert(g_root, "maroon", RGB(0x800000));
+    Insert(g_root, "mediumaquamarine", RGB(0x66CDAA));
+    Insert(g_root, "mediumblue", RGB(0x0000CD));
+    Insert(g_root, "mediumorchid", RGB(0xBA55D3));
+    Insert(g_root, "mediumpurple", RGB(0x9370DB));
+    Insert(g_root, "mediumseagreen", RGB(0x3CB371));
+    Insert(g_root, "mediumslateblue", RGB(0x7B68EE));
+    Insert(g_root, "mediumspringgreen", RGB(0x00FA9A));
+    Insert(g_root, "mediumturquoise", RGB(0x48D1CC));
+    Insert(g_root, "mediumvioletred", RGB(0xC71585));
+    Insert(g_root, "midnightblue", RGB(0x191970));
+    Insert(g_root, "mintcream", RGB(0xF5FFFA));
+    Insert(g_root, "mistyrose", RGB(0xFFE4E1));
+    Insert(g_root, "moccasin", RGB(0xFFE4B5));
+    Insert(g_root, "navajowhite", RGB(0xFFDEAD));
+    Insert(g_root, "navy", RGB(0x000080));
+    Insert(g_root, "oldlace", RGB(0xFDF5E6));
+    Insert(g_root, "olive", RGB(0x808000));
+    Insert(g_root, "olivedrab", RGB(0x6B8E23));
+    Insert(g_root, "orange", RGB(0xFFA500));
+    Insert(g_root, "orangered", RGB(0xFF4500));
+    Insert(g_root, "orchid", RGB(0xDA70D6));
+    Insert(g_root, "palegoldenrod", RGB(0xEEE8AA));
+    Insert(g_root, "palegreen", RGB(0x98FB98));
+    Insert(g_root, "paleturquoise", RGB(0xAFEEEE));
+    Insert(g_root, "palevioletred", RGB(0xDB7093));
+    Insert(g_root, "papayawhip", RGB(0xFFEFD5));
+    Insert(g_root, "peachpuff", RGB(0xFFDAB9));
+    Insert(g_root, "peru", RGB(0xCD853F));
+    Insert(g_root, "pink", RGB(0xFFC0CB));
+    Insert(g_root, "plum", RGB(0xDDA0DD));
+    Insert(g_root, "powderblue", RGB(0xB0E0E6));
+    Insert(g_root, "purple", RGB(0x800080));
+    Insert(g_root, "rebeccapurple", RGB(0x663399));
+    Insert(g_root, "red", RGB(0xFF0000));
+    Insert(g_root, "rosybrown", RGB(0xBC8F8F));
+    Insert(g_root, "royalblue", RGB(0x4169E1));
+    Insert(g_root, "saddlebrown", RGB(0x8B4513));
+    Insert(g_root, "salmon", RGB(0xFA8072));
+    Insert(g_root, "sandybrown", RGB(0xF4A460));
+    Insert(g_root, "seagreen", RGB(0x2E8B57));
+    Insert(g_root, "seashell", RGB(0xFFF5EE));
+    Insert(g_root, "sienna", RGB(0xA0522D));
+    Insert(g_root, "silver", RGB(0xC0C0C0));
+    Insert(g_root, "skyblue", RGB(0x87CEEB));
+    Insert(g_root, "slateblue", RGB(0x6A5ACD));
+    Insert(g_root, "slategray", RGB(0x708090));
+    Insert(g_root, "slategrey", RGB(0x708090));
+    Insert(g_root, "snow", RGB(0xFFFAFA));
+    Insert(g_root, "springgreen", RGB(0x00FF7F));
+    Insert(g_root, "steelblue", RGB(0x4682B4));
+    Insert(g_root, "tan", RGB(0xD2B48C));
+    Insert(g_root, "teal", RGB(0x008080));
+    Insert(g_root, "thistle", RGB(0xD8BFD8));
+    Insert(g_root, "tomato", RGB(0xFF6347));
+    Insert(g_root, "turquoise", RGB(0x40E0D0));
+    Insert(g_root, "violet", RGB(0xEE82EE));
+    Insert(g_root, "wheat", RGB(0xF5DEB3));
+    Insert(g_root, "white", RGB(0xFFFFFF));
+    Insert(g_root, "whitesmoke", RGB(0xF5F5F5));
+    Insert(g_root, "yellow", RGB(0xFFFF00));
+    Insert(g_root, "yellowgreen", RGB(0x9ACD32));
+}
+
+// ---------- NORMALIZATION ----------
+static inline char toLower(char c) {
+    return (c >= 'A' && c <= 'Z') ? (c + 32) : c;
+}
+
+// ---------- FAST TRIE PARSER ----------
+static std::optional<Color> ParseColor(std::string_view s) {
+    if (!built)
+    {
+        built = true;
+        BuildTrie();
+    }
+    if (s.empty()) return std::nullopt;
+
+    // hex path first (fast reject)
+    if (s[0] == '#') {
+        auto hex = [](char c)->uint8_t {
+            if (c >= '0' && c <= '9') return c - '0';
+            return (c & 0xF) + 9; // fast path (assumes valid input)
+        };
+
+        auto hex2 = [&](char a, char b) {
+            return (hex(a) << 4) | hex(b);
+        };
+
+        if (s.size() == 4) {
+            auto e = [&](char c) { uint8_t v = hex(c); return v * 17; };
+            return Color(e(s[3]), e(s[2]), e(s[1]));
+        }
+
+        if (s.size() == 7) {
+            return Color(
+                hex2(s[1], s[2]),
+                hex2(s[3], s[4]),
+                hex2(s[5], s[6])
+            );
+        }
+    }
+
+    const TrieNode* node = &g_root;
+
+    for (char c : s) {
+        char lc = toLower(c);
+        node = node->next[(unsigned char)lc];
+        if (!node) return std::nullopt;
+    }
+
+    return node->value;
+}
 static std::optional<BorderStyle> ParseBorderStyle(std::string_view val) {
-    if (val == "solid")  return BorderStyle::solid;
-    if (val == "none")   return BorderStyle::none;
-    if (val == "dotted") return BorderStyle::dotted;
-    if (val == "dashed") return BorderStyle::dashed;
+    if (val == "solid")  return BorderStyle::Solid;
+    if (val == "none")   return BorderStyle::None;
+    if (val == "dotted") return BorderStyle::Dotted;
+    if (val == "dashed") return BorderStyle::Dashed;
     return std::nullopt;
 }
 //#define CSS_DEBUG
@@ -290,26 +495,26 @@ void CSSParser::ApplyDeclarations(const std::vector<CSSDeclaration> &decls,
             for (auto& c : parts) {
                 auto widthVal = ParseCSSLength(c, vw, vh);
                 if (widthVal.has_value()) {
-                    node.specifiedStyle.BorderTop.borderWidth    = widthVal.value();
-                    node.specifiedStyle.BorderBottom.borderWidth = widthVal.value();
-                    node.specifiedStyle.BorderLeft.borderWidth   = widthVal.value();
-                    node.specifiedStyle.BorderRight.borderWidth  = widthVal.value();
+                    node.specifiedStyle.borderTop.borderWidth    = widthVal.value();
+                    node.specifiedStyle.borderBottom.borderWidth = widthVal.value();
+                    node.specifiedStyle.borderLeft.borderWidth   = widthVal.value();
+                    node.specifiedStyle.borderRight.borderWidth  = widthVal.value();
                     continue;
                 }
 
                 if (auto style = ParseBorderStyle(c)) {
-                    node.specifiedStyle.BorderTop.borderStyle    = *style;
-                    node.specifiedStyle.BorderBottom.borderStyle = *style;
-                    node.specifiedStyle.BorderLeft.borderStyle   = *style;
-                    node.specifiedStyle.BorderRight.borderStyle  = *style;
+                    node.specifiedStyle.borderTop.borderStyle    = *style;
+                    node.specifiedStyle.borderBottom.borderStyle = *style;
+                    node.specifiedStyle.borderLeft.borderStyle   = *style;
+                    node.specifiedStyle.borderRight.borderStyle  = *style;
                     continue;
                 }
 
                 if (auto color = ParseColor(c)) {
-                    node.specifiedStyle.BorderTop.borderColor    = *color;
-                    node.specifiedStyle.BorderBottom.borderColor = *color;
-                    node.specifiedStyle.BorderLeft.borderColor   = *color;
-                    node.specifiedStyle.BorderRight.borderColor  = *color;
+                    node.specifiedStyle.borderTop.borderColor    = *color;
+                    node.specifiedStyle.borderBottom.borderColor = *color;
+                    node.specifiedStyle.borderLeft.borderColor   = *color;
+                    node.specifiedStyle.borderRight.borderColor  = *color;
                     continue;
                 }
 
@@ -324,10 +529,10 @@ void CSSParser::ApplyDeclarations(const std::vector<CSSDeclaration> &decls,
             case HashProperty("border-right"): {
             SplitShorthand(v, parts);
 
-            auto* b = &node.specifiedStyle.BorderTop;
-            if (p == "border-bottom") b = &node.specifiedStyle.BorderBottom;
-            if (p == "border-left")   b = &node.specifiedStyle.BorderLeft;
-            if (p == "border-right")  b = &node.specifiedStyle.BorderRight;
+            auto* b = &node.specifiedStyle.borderTop;
+            if (p == "border-bottom") b = &node.specifiedStyle.borderBottom;
+            if (p == "border-left")   b = &node.specifiedStyle.borderLeft;
+            if (p == "border-right")  b = &node.specifiedStyle.borderRight;
 
             for (auto& c : parts) {
                 auto w = ParseCSSLength(c, vw, vh);
@@ -344,10 +549,10 @@ void CSSParser::ApplyDeclarations(const std::vector<CSSDeclaration> &decls,
         case HashProperty("border-width"): {
             auto w = ParseCSSLength(v, vw, vh);
             if (w.has_value()) {
-                node.specifiedStyle.BorderTop.borderWidth    = w.value();
-                node.specifiedStyle.BorderBottom.borderWidth = w.value();
-                node.specifiedStyle.BorderLeft.borderWidth   = w.value();
-                node.specifiedStyle.BorderRight.borderWidth  = w.value();
+                node.specifiedStyle.borderTop.borderWidth    = w.value();
+                node.specifiedStyle.borderBottom.borderWidth = w.value();
+                node.specifiedStyle.borderLeft.borderWidth   = w.value();
+                node.specifiedStyle.borderRight.borderWidth  = w.value();
             } else {
                 CSS_WARN("Failed to parse border-width value: \"" << v << "\"");
             }
@@ -355,20 +560,20 @@ void CSSParser::ApplyDeclarations(const std::vector<CSSDeclaration> &decls,
         case HashProperty("border-style"): {
             auto s = ParseBorderStyle(v);
             if (!s) CSS_WARN("Failed to parse border-style value: \"" << v << "\"");
-            BorderStyle bs = s.value_or(BorderStyle::none);
-            node.specifiedStyle.BorderTop.borderStyle    = bs;
-            node.specifiedStyle.BorderBottom.borderStyle = bs;
-            node.specifiedStyle.BorderLeft.borderStyle   = bs;
-            node.specifiedStyle.BorderRight.borderStyle  = bs;
+            BorderStyle bs = s.value_or(BorderStyle::None);
+            node.specifiedStyle.borderTop.borderStyle    = bs;
+            node.specifiedStyle.borderBottom.borderStyle = bs;
+            node.specifiedStyle.borderLeft.borderStyle   = bs;
+            node.specifiedStyle.borderRight.borderStyle  = bs;
         }break;
         case HashProperty("border-color"): {
             auto c = ParseColor(v);
             if (!c) CSS_WARN("Failed to parse border-color value: \"" << v << "\"");
             Color bc = c.value_or(Color(0,0,0));
-            node.specifiedStyle.BorderTop.borderColor    = bc;
-            node.specifiedStyle.BorderBottom.borderColor = bc;
-            node.specifiedStyle.BorderLeft.borderColor   = bc;
-            node.specifiedStyle.BorderRight.borderColor  = bc;
+            node.specifiedStyle.borderTop.borderColor    = bc;
+            node.specifiedStyle.borderBottom.borderColor = bc;
+            node.specifiedStyle.borderLeft.borderColor   = bc;
+            node.specifiedStyle.borderRight.borderColor  = bc;
         }break;
         case HashProperty("color"):
         {
@@ -640,7 +845,104 @@ void CSSParser::ApplyDeclarations(const std::vector<CSSDeclaration> &decls,
                 node.specifiedStyle.textAlign = TextAlign::Left;
             }break;
         }
+// ── border radius shorthand & longhands ───────────────────────────────
 
+        case HashProperty("border-radius"):
+        {
+            SplitShorthand(v, parts);
+
+            CSSLength zeroLen = { 0.0f, LengthUnit::Px };
+            CSSLength tl = zeroLen, tr = zeroLen, br = zeroLen, bl = zeroLen;
+            bool parsed_any = false;
+
+            if (parts.size() == 1) {
+                // e.g., border-radius: 10px;
+                auto val = ParseCSSLength(parts[0], vw, vh);
+                if (val) { tl = tr = br = bl = *val; parsed_any = true; }
+                else CSS_WARN("Failed to parse border-radius value: \"" << parts[0] << "\"");
+            }
+            else if (parts.size() == 2) {
+                // e.g., border-radius: 10px 20px;
+                auto tl_br = ParseCSSLength(parts[0], vw, vh);
+                auto tr_bl = ParseCSSLength(parts[1], vw, vh);
+                if (tl_br && tr_bl) {
+                    tl = br = *tl_br;
+                    tr = bl = *tr_bl;
+                    parsed_any = true;
+                }
+            }
+            else if (parts.size() == 3) {
+                // e.g., border-radius: 10px 20px 30px;
+                auto top_left     = ParseCSSLength(parts[0], vw, vh);
+                auto top_r_bot_l  = ParseCSSLength(parts[1], vw, vh);
+                auto bottom_right = ParseCSSLength(parts[2], vw, vh);
+                if (top_left && top_r_bot_l && bottom_right) {
+                    tl = *top_left;
+                    tr = bl = *top_r_bot_l;
+                    br = *bottom_right;
+                    parsed_any = true;
+                }
+            }
+            else if (parts.size() == 4) {
+                // e.g., border-radius: 10px 20px 30px 40px;
+                auto top_left     = ParseCSSLength(parts[0], vw, vh);
+                auto top_right    = ParseCSSLength(parts[1], vw, vh);
+                auto bottom_right = ParseCSSLength(parts[2], vw, vh);
+                auto bottom_left  = ParseCSSLength(parts[3], vw, vh);
+                if (top_left && top_right && bottom_right && bottom_left) {
+                    tl = *top_left; tr = *top_right; br = *bottom_right; bl = *bottom_left;
+                    parsed_any = true;
+                }
+            }
+
+            if (parsed_any) {
+                node.specifiedStyle.set.border_radius_top_left     = true;
+                node.specifiedStyle.set.border_radius_top_right    = true;
+                node.specifiedStyle.set.border_radius_bottom_right = true;
+                node.specifiedStyle.set.border_radius_bottom_left  = true;
+
+                node.specifiedStyle.border_radius_top_left     = tl;
+                node.specifiedStyle.border_radius_top_right    = tr;
+                node.specifiedStyle.border_radius_bottom_right = br;
+                node.specifiedStyle.border_radius_bottom_left  = bl;
+            }
+        }break;
+
+        case HashProperty("border-top-left-radius"):
+        {
+            auto val = ParseCSSLength(v, vw, vh);
+            if (val) {
+                node.specifiedStyle.set.border_radius_top_left = true;
+                node.specifiedStyle.border_radius_top_left = *val;
+            }
+        }break;
+
+        case HashProperty("border-top-right-radius"):
+        {
+            auto val = ParseCSSLength(v, vw, vh);
+            if (val) {
+                node.specifiedStyle.set.border_radius_top_right = true;
+                node.specifiedStyle.border_radius_top_right = *val;
+            }
+        }break;
+
+        case HashProperty("border-bottom-right-radius"):
+        {
+            auto val = ParseCSSLength(v, vw, vh);
+            if (val) {
+                node.specifiedStyle.set.border_radius_bottom_right = true;
+                node.specifiedStyle.border_radius_bottom_right = *val;
+            }
+        }break;
+
+        case HashProperty("border-bottom-left-radius"):
+        {
+            auto val = ParseCSSLength(v, vw, vh);
+            if (val) {
+                node.specifiedStyle.set.border_radius_bottom_left = true;
+                node.specifiedStyle.border_radius_bottom_left = *val;
+            }
+        }break;
         // ── text decoration ───────────────────────────────────────────────
 
         case HashProperty("text-decoration"):
@@ -658,9 +960,9 @@ void CSSParser::ApplyDeclarations(const std::vector<CSSDeclaration> &decls,
                 else if (w == "none")
                     node.specifiedStyle.textDecoration = TextDecoration::None;
                 else if (w == "blink")
-                    node.specifiedStyle.textDecoration = TextDecoration::blink;
+                    node.specifiedStyle.textDecoration = TextDecoration::Blink;
                 else if (w == "spelling-error")
-                    node.specifiedStyle.textDecoration = TextDecoration::spellingError;
+                    node.specifiedStyle.textDecoration = TextDecoration::SpellingError;
                 else if (w == "grammar-error")
                     node.specifiedStyle.textDecoration = TextDecoration::GrammarError;
                 else if (w == "wavy")
@@ -674,9 +976,9 @@ void CSSParser::ApplyDeclarations(const std::vector<CSSDeclaration> &decls,
                 else if (w == "double")
                     node.specifiedStyle.textDecorationStyle = TextDecorationStyle::Double;
                 else if (auto lenVal = ParseCSSLength(w, vw, vh))
-                    node.specifiedStyle.TextDecorationThickness = *lenVal;
+                    node.specifiedStyle.textDecorationThickness = *lenVal;
                 else if (auto colVal = ParseColor(w))
-                    node.specifiedStyle.TextDecorationColor = *colVal;
+                    node.specifiedStyle.textDecorationColor = *colVal;
                 else
                     CSS_WARN("Unrecognized token in text-decoration: \"" << w << "\"");
             }break;
@@ -719,12 +1021,12 @@ void CSSParser::ApplyDeclarations(const std::vector<CSSDeclaration> &decls,
         {
             node.specifiedStyle.set.whiteSpace = true;
             if (v == "nowrap")
-                node.specifiedStyle.whiteSpace = WhiteSpace::nowrap;
+                node.specifiedStyle.whiteSpace = WhiteSpace::NoWrap;
             else if (v == "normal")
-                node.specifiedStyle.whiteSpace = WhiteSpace::normal;
+                node.specifiedStyle.whiteSpace = WhiteSpace::Normal;
             else {
                 CSS_WARN("Unrecognized white-space value: \"" << v << "\" (defaulting to normal)");
-                node.specifiedStyle.whiteSpace = WhiteSpace::normal;
+                node.specifiedStyle.whiteSpace = WhiteSpace::Normal;
             }break;
         }
         case HashProperty("text-overflow"):
@@ -761,23 +1063,23 @@ void CSSParser::ApplyDeclarations(const std::vector<CSSDeclaration> &decls,
         case HashProperty("vertical-align"): {
             node.specifiedStyle.set.verticalAlign = true;
             if (v == "baseline")
-                node.specifiedStyle.verticalAlign = VerticalAlign::Baseline;
+                node.specifiedStyle.verticalAlign = VerticalAlignKeyword::Baseline;
             else if (v == "sub")
-                node.specifiedStyle.verticalAlign = VerticalAlign::Sub;
+                node.specifiedStyle.verticalAlign = VerticalAlignKeyword::Sub;
             else if (v == "super")
-                node.specifiedStyle.verticalAlign = VerticalAlign::Super;
+                node.specifiedStyle.verticalAlign = VerticalAlignKeyword::Super;
             else if (v == "top")
-                node.specifiedStyle.verticalAlign = VerticalAlign::Top;
+                node.specifiedStyle.verticalAlign = VerticalAlignKeyword::Top;
             else if (v == "text-top")
-                node.specifiedStyle.verticalAlign = VerticalAlign::TextTop;
+                node.specifiedStyle.verticalAlign = VerticalAlignKeyword::TextTop;
             else if (v == "middle")
-                node.specifiedStyle.verticalAlign = VerticalAlign::Middle;
+                node.specifiedStyle.verticalAlign = VerticalAlignKeyword::Middle;
             else if (v == "bottom")
-                node.specifiedStyle.verticalAlign = VerticalAlign::Bottom;
+                node.specifiedStyle.verticalAlign = VerticalAlignKeyword::Bottom;
             else if (v == "text-bottom")
-                node.specifiedStyle.verticalAlign = VerticalAlign::TextBottom;
+                node.specifiedStyle.verticalAlign = VerticalAlignKeyword::TextBottom;
             else if (ParseCSSLength(v, vw, vh).has_value()) {
-                node.specifiedStyle.verticalAlign = VerticalAlign::Other;
+                node.specifiedStyle.verticalAlign = VerticalAlignKeyword::Other;
                 node.specifiedStyle.verticalAlignValue = ParseCSSLength(v, vw, vh).value();
             }
                  break;

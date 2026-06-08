@@ -136,13 +136,18 @@ void ViewportManager::Init() {
     Layout_Timer.StopTimer();
     //Logger::Log_Verbose("Layout took %f milliseconds", "ViewportManager", 0, Layout_Timer.GetElapsedMilliseconds());
 }
-
+static void FixParentPointers(Node& node) {
+    for (auto& child : node.children) {
+        child->parent = &node;
+        FixParentPointers(*child);
+    }
+}
 void ViewportManager::SetLink(const std::string &Link) {
     CurrentLink = Link;
     LinkChanged = true;
 }
 bool NeedReconstruct(Node *dom) {
-    if (dom->Reconstruct) {
+    if (dom->reconstruct) {
         return true;
     }
     for (const auto& c : dom->children) {
@@ -170,6 +175,7 @@ void ViewportManager::Update() {
     if (UpdateNeeded) {
         UpdateNeeded = false;
         FindTitle();
+        FixParentPointers(dom);
         layout.Update(dom);
     }
 }

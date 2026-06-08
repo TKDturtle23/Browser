@@ -26,6 +26,7 @@ enum class RenderCommandType {
     FillRect,
     DrawRect,
     FillRectBeveled,
+    FillRectRounded,
     DrawLine,
     DrawPixel,
     DrawCircle,
@@ -45,7 +46,7 @@ struct DrawCircleCommand        { int cx, cy, radius; Color color; };
 struct DrawGlyphCommand         { int x, y; Glyph glyph; Color color; };
 
 struct FillRectBeveledCommand   { int x, y, w, h, radius; Color color; };
-
+struct FillRectRoundedCommand   { int x, y, w, h, tl, tr, bl, br; Color color; };
 struct BlitRenderTargetCommand {
     RenderTargetID source { InvalidRenderTarget };
     int dstX = 0, dstY = 0;
@@ -84,6 +85,7 @@ struct RenderCommand {
     BlitRenderTargetCommand blitRenderTarget{};
     DrawWavyLineIntCommand  drawWavyLineInt {};
     DrawWavyLineFloatCommand drawWavyLineFloat{};
+    FillRectRoundedCommand fillRectRounded {};
 };
 
 // ---------------------------------------------------------------------------

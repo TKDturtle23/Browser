@@ -22,10 +22,10 @@ int ResolveLength(const CSSLength& len, int referenceSize, int Vw, int Vh) {
     }
 }
 
-int ResolveFontSize(const CSSLength& fontSize, int vw, int vh) {
+int ResolveFontSize(const CSSLength& fontSize, int vw, int vh, float inheritedFontSize) {
     constexpr int kDefaultFontSize = 16;
     if (fontSize.unit == LengthUnit::Em)
-        return static_cast<int>(fontSize.value * kDefaultFontSize);
+        return static_cast<int>(fontSize.value * inheritedFontSize);
     if (fontSize.unit != LengthUnit::Auto)
         return ResolveLength(fontSize, kDefaultFontSize, vw, vh);
     return kDefaultFontSize;
@@ -44,7 +44,7 @@ bool IsLayoutIgnored(const Node& n) {
     return false;
 }
 
-int GetVisibleBorderWidth(const Border_side& side, int vw, int vh) {
+int GetVisibleBorderWidth(const BorderSide& side, int vw, int vh) {
     if (side.borderWidth.unit == LengthUnit::Auto || side.borderWidth.value < 0.0f)
         return 0;
     return ResolveLength(side.borderWidth, 16, vw, vh);

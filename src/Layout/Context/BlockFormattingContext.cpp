@@ -7,10 +7,10 @@
 #include "Layout/LayoutGenerator.h"
 
 int BlockFormattingContext::Layout(Node &node, LayoutBox &parent, int contentX, int contentY, int contentWidth, int contentHeight) {
-    int cursorY        = contentY;
+    int cursorY          = contentY;
     int prevMarginBottom = 0;
-    auto& kids   = node.children;
-    size_t i           = 0;
+    auto& kids           = node.children;
+    size_t i             = 0;
 
     bool hasBlockChildren = false;
     for (const auto& child : kids) {
@@ -25,47 +25,59 @@ int BlockFormattingContext::Layout(Node &node, LayoutBox &parent, int contentX, 
         if (IsLayoutIgnored(child)) { ++i; continue; }
 
         if (IsInlineChild(child)) {
+            // Anonymous boxes carry no margins — flush prevMarginBottom directly.
             cursorY += prevMarginBottom;
             prevMarginBottom = 0;
 
             if (hasBlockChildren) {
                 LayoutBox anonBox;
-                anonBox.kind  = BoxKind::Block;
-                anonBox.node  = nullptr;
-                anonBox.x     = contentX;
-                anonBox.y     = cursorY;
-                anonBox.width = 0;
+                anonBox.kind   = BoxKind::Block;
+                anonBox.node   = nullptr;
+                anonBox.x      = contentX;
+                anonBox.y      = cursorY;
+                anonBox.width  = contentWidth;
 
                 i = LayoutInlineRun(kids, i, anonBox, contentX, cursorY, contentWidth,
                                     node.computedStyle.textAlign, cursorY);
 
-                int maxRight = contentX;
-                for (const auto& lb : anonBox.children)
-                    maxRight = std::max(maxRight, lb.x + lb.width);
-                anonBox.width  = maxRight - contentX;
-                anonBox.height = cursorY - anonBox.y;
+                anonBox.height = std::max(0, cursorY - anonBox.y);
                 parent.children.push_back(std::move(anonBox));
             } else {
                 i = LayoutInlineRun(kids, i, parent, contentX, cursorY, contentWidth,
                                     node.computedStyle.textAlign, cursorY);
             }
         } else {
-            const auto& s       = child.computedStyle;
-            int marginTop       = ResolveLength(s.margin_top, contentWidth, lr_.GetWidth(), lr_.GetHeight());
+            const auto& s = child.computedStyle;
+            int marginTop = ResolveLength(s.margin_top, contentWidth, lr_.GetWidth(), lr_.GetHeight());
+
+            // Collapse the previous block's bottom margin with this block's top margin.
+            // Also fold in any margin that escaped upward out of the previous child
+            // (i.e. the previous child had no bottom border/padding, so its last
+            // descendant's margin bubbled out). prevMarginBottom already holds the
+            // max of the previous child's own margin_bottom and its escaped margin,
+            // so the three-way collapse is just a single std::max here.
             int collapsedMargin = std::max(prevMarginBottom, marginTop);
             cursorY += collapsedMargin;
 
-            LayoutBox cb = lr_.LayoutBlock(child, contentX, cursorY, contentWidth, contentHeight);
-            cursorY      = cb.y + cb.height;
-            prevMarginBottom = ResolveLength(s.margin_bottom, contentWidth, lr_.GetWidth(), lr_.GetHeight());
+            BlockResult result = lr_.LayoutBlock(child, contentX, cursorY, contentWidth, contentHeight);
+            cursorY = result.box.y + result.box.height;
 
-            parent.children.push_back(std::move(cb));
+            // If the child had no bottom edge (border + padding == 0), its trailing
+            // margin escaped upward. Carry it forward as prevMarginBottom so it gets
+            // collapsed with the next sibling's margin_top (or the parent's own
+            // trailing margin at the end of this loop).
+            prevMarginBottom = result.escapedMarginBottom;
+
+            parent.children.push_back(std::move(result.box));
             ++i;
         }
     }
 
-    cursorY += prevMarginBottom;
-    return cursorY;
+    // Store the final trailing margin. If this BFC's container has no bottom
+    // border/padding, LayoutBlock will add it to escapedMarginBottom so the
+    // grandparent BFC can collapse it further.
+    lastChildMarginBottom_ = prevMarginBottom;
+    return cursorY;  // does NOT include the trailing margin
 }
 
 size_t BlockFormattingContext::LayoutInlineRun(std::vector<std::unique_ptr<Node>> &kids, size_t start,

@@ -47,10 +47,10 @@ struct LayoutBox {
 };
 bool IsBlank(const std::string& s);
 int ResolveLength(const CSSLength& len, int referenceSize, int Vw, int Vh);
-int ResolveFontSize(const CSSLength& fontSize, int vw, int vh);
+int ResolveFontSize(const CSSLength& fontSize, int vw, int vh, float inheritedFontSize);
 bool IsNonRendered(const std::string& tag);
 bool IsLayoutIgnored(const Node& n);
-int GetVisibleBorderWidth(const Border_side& side, int vw, int vh);
+int GetVisibleBorderWidth(const BorderSide& side, int vw, int vh);
 bool IsInlineTag(const std::string& tag);
 bool IsInlineChild(const Node& n);
 #endif //BROWSER_LAYOUTHELPER_H

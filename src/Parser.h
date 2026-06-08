@@ -15,7 +15,7 @@ class Parser {
     public:
     static Node Parse(const std::vector<Token>& tokens);
     void PrintNode(const Node& node, int depth = 0);
-    static Node *FindNodeByTag(Node* dom, std::string tag);
+    static Node *FindNodeByTag(Node* dom, const std::string& tag);
 };
 
 

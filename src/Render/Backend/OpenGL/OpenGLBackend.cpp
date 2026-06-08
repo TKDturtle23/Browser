@@ -508,7 +508,93 @@ void OpenGLBackend::ExecuteCommand(const RenderCommand& cmd) {
             PushQuad(fx + fw - 1.0f, fy + 1.0f, 1.0f, fh - 2.0f, r.color, 0, 0.f, 0.f, 1.f, 1.f); // Right
             break;
         }
+case RenderCommandType::FillRectRounded: {
+            const auto& r = cmd.fillRectRounded;
 
+            const float fx = static_cast<float>(r.x);
+            const float fy = static_cast<float>(r.y);
+            const float fw = static_cast<float>(r.w);
+            const float fh = static_cast<float>(r.h);
+
+            // Clamp individual corners to prevent overlaps or layout breaking
+            float tl = std::max(0.0f, std::min(static_cast<float>(r.tl), std::min(fw, fh) / 2.0f));
+            float tr = std::max(0.0f, std::min(static_cast<float>(r.tr), std::min(fw - tl, fh) / 2.0f));
+            float bl = std::max(0.0f, std::min(static_cast<float>(r.bl), std::min(fw, fh - tl) / 2.0f));
+            float br = std::max(0.0f, std::min(static_cast<float>(r.br), std::min(fw - bl, fh - tr) / 2.0f));
+
+            // --- 1. Fill Solid Interior Architecture (Central Cross + Side Extents) ---
+            // Calculate top/bottom pinning spans for vertical central geometry
+            float topY    = fy + std::max(tl, tr);
+            float bottomY = fy + fh - std::max(bl, br);
+
+            if (bottomY > topY) {
+                // Central Core Block
+                PushQuad(fx, topY, fw, bottomY - topY, r.color, 0, 0.f, 0.f, 1.f, 1.f);
+            }
+
+            // Top variable horizontal deck (between top-left and top-right caps)
+            if (tl > 0.0f || tr > 0.0f) {
+                PushQuad(fx + tl, fy, fw - tl - tr, std::max(tl, tr), r.color, 0, 0.f, 0.f, 1.f, 1.f);
+            }
+
+            // Bottom variable horizontal deck (between bottom-left and bottom-right caps)
+            if (bl > 0.0f || br > 0.0f) {
+                float hHeight = std::max(bl, br);
+                PushQuad(fx + bl, fy + fh - hHeight, fw - bl - br, hHeight, r.color, 0, 0.f, 0.f, 1.f, 1.f);
+            }
+
+            // Variable Left Vertical Filler
+            if (tl > 0.0f && topY > (fy + tl)) {
+                PushQuad(fx, fy + tl, tl, topY - (fy + tl), r.color, 0, 0.f, 0.f, 1.f, 1.f);
+            }
+            if (bl > 0.0f && (fy + fh - bl) > bottomY) {
+                PushQuad(fx, bottomY, bl, (fy + fh - bl) - bottomY, r.color, 0, 0.f, 0.f, 1.f, 1.f);
+            }
+
+            // Variable Right Vertical Filler
+            if (tr > 0.0f && topY > (fy + tr)) {
+                PushQuad(fx + fw - tr, fy + tr, tr, topY - (fy + tr), r.color, 0, 0.f, 0.f, 1.f, 1.f);
+            }
+            if (br > 0.0f && (fy + fh - br) > bottomY) {
+                PushQuad(fx + fw - br, bottomY, br, (fy + fh - br) - bottomY, r.color, 0, 0.f, 0.f, 1.f, 1.f);
+            }
+
+            FlushBatch();
+
+            // --- 2. Rounded Corners Processing (Using Dynamic Quadrant Sub-sampling) ---
+            activeShaderOverride = circleShader;
+
+            // Top-Left Corner
+            if (tl > 0.0f) {
+                activeMask[0] = -1.f; activeMask[1] = -1.f; activeMask[2] = 0.f; activeMask[3] = 0.f;
+                PushQuad(fx, fy, tl * 2.f, tl * 2.f, r.color, whiteTexture, -1.f, -1.f, 1.f, 1.f);
+                FlushBatch();
+            }
+
+            // Top-Right Corner
+            if (tr > 0.0f) {
+                activeMask[0] = 0.f; activeMask[1] = -1.f; activeMask[2] = 1.f; activeMask[3] = 0.f;
+                PushQuad(fx + fw - tr * 2.f, fy, tr * 2.f, tr * 2.f, r.color, whiteTexture, -1.f, -1.f, 1.f, 1.f);
+                FlushBatch();
+            }
+
+            // Bottom-Left Corner
+            if (bl > 0.0f) {
+                activeMask[0] = -1.f; activeMask[1] = 0.f; activeMask[2] = 0.f; activeMask[3] = 1.f;
+                PushQuad(fx, fy + fh - bl * 2.f, bl * 2.f, bl * 2.f, r.color, whiteTexture, -1.f, -1.f, 1.f, 1.f);
+                FlushBatch();
+            }
+
+            // Bottom-Right Corner
+            if (br > 0.0f) {
+                activeMask[0] = 0.f; activeMask[1] = 0.f; activeMask[2] = 1.f; activeMask[3] = 1.f;
+                PushQuad(fx + fw - br * 2.f, fy + fh - br * 2.f, br * 2.f, br * 2.f, r.color, whiteTexture, -1.f, -1.f, 1.f, 1.f);
+                FlushBatch();
+            }
+
+            activeShaderOverride = 0;
+            break;
+        }
         case RenderCommandType::DrawLine: {
             const auto& l = cmd.drawLine;
             float dx = static_cast<float>(l.x1 - l.x0);
@@ -551,6 +637,7 @@ void OpenGLBackend::ExecuteCommand(const RenderCommand& cmd) {
         }
 
         case RenderCommandType::DrawGlyph: {
+
             const auto& g = cmd.drawGlyph;
             GLuint nativeTex = nativeTextures[g.glyph.textureAssetID];
             PushQuad(static_cast<float>(g.x), static_cast<float>(g.y),

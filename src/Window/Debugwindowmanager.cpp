@@ -307,11 +307,11 @@ void DebugWindowManager::BuildStyleRows() {
 
     auto WhiteSpaceStr = [](WhiteSpace w) -> std::string {
         switch(w) {
-            case WhiteSpace::normal:   return "normal";
-            case WhiteSpace::nowrap:   return "nowrap";
-            case WhiteSpace::pre:      return "pre";
-            case WhiteSpace::pre_wrap: return "pre-wrap";
-            case WhiteSpace::pre_line: return "pre-line";
+            case WhiteSpace::Normal:   return "normal";
+            case WhiteSpace::NoWrap:   return "nowrap";
+            case WhiteSpace::Pre:      return "pre";
+            case WhiteSpace::PreWrap: return "pre-wrap";
+            case WhiteSpace::PreLine: return "pre-line";
             default:                   return "unknown";
         }
     };
@@ -334,24 +334,24 @@ void DebugWindowManager::BuildStyleRows() {
             case ObjectFit::Fill:       return "fill";
             case ObjectFit::Contain:    return "contain";
             case ObjectFit::Cover:      return "cover";
-            case ObjectFit::Scale_Down: return "scale-down";
+            case ObjectFit::ScaleDown: return "scale-down";
             case ObjectFit::None:       return "none";
             default:                    return "fill";
         }
     };
 
-    auto VerticalAlignStr = [](VerticalAlign v) -> std::string {
+    auto VerticalAlignStr = [](VerticalAlignKeyword v) -> std::string {
         switch(v) {
-            case VerticalAlign::Top:        return "top";
-            case VerticalAlign::Middle:     return "middle";
-            case VerticalAlign::Bottom:     return "bottom";
-            case VerticalAlign::Sub:        return "sub";
-            case VerticalAlign::Super:      return "super";
-            case VerticalAlign::TextTop:    return "text-top";
-            case VerticalAlign::TextBottom: return "text-bottom";
-            case VerticalAlign::Baseline:   return "baseline";
-            case VerticalAlign::Inherit:    return "inherit";
-            case VerticalAlign::Initial:    return "initial";
+            case VerticalAlignKeyword::Top:        return "top";
+            case VerticalAlignKeyword::Middle:     return "middle";
+            case VerticalAlignKeyword::Bottom:     return "bottom";
+            case VerticalAlignKeyword::Sub:        return "sub";
+            case VerticalAlignKeyword::Super:      return "super";
+            case VerticalAlignKeyword::TextTop:    return "text-top";
+            case VerticalAlignKeyword::TextBottom: return "text-bottom";
+            case VerticalAlignKeyword::Baseline:   return "baseline";
+            //case VerticalAlignKeyword::in:    return "inherit";
+            //case VerticalAlignKeyword::Initial:    return "initial";
             default:                        return "other";
         }
     };
@@ -429,7 +429,7 @@ void DebugWindowManager::BuildStyleRows() {
     if (cs.set.textAlign)     addRow("text-align", TextAlignStr(cs.textAlign));
     if (cs.set.objectFit)     addRow("object-fit", ObjectFitStr(cs.objectFit));
     if (cs.set.verticalAlign) {
-        if (cs.verticalAlign == VerticalAlign::Other) {
+        if (cs.verticalAlign == VerticalAlignKeyword::Other) {
             addRow("vertical-align", LengthStr(cs.verticalAlignValue));
         } else {
             addRow("vertical-align", VerticalAlignStr(cs.verticalAlign));
@@ -634,7 +634,7 @@ void DebugWindowManager::RenderInspectorTreeNode(const Node *node, int treeW) {
         name += "<!DOCTYPE " + node->text + ">";
         break;
         }
-        case (NodeType::Image): {
+    case (NodeType::Image): {
             name += "<img />";
         } break;
         case NodeType::Document:

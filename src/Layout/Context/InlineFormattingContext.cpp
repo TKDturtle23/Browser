@@ -42,7 +42,7 @@ int InlineFormattingContext::LayoutRoots(std::vector<Node *> &roots, LayoutBox &
 
     for (const Word& w : words) {
         const Style& s = (w.node->parent) ? w.node->parent->computedStyle : w.node->computedStyle;
-        bool isNoWrap   = (s.whiteSpace == WhiteSpace::nowrap);
+        bool isNoWrap   = (s.whiteSpace == WhiteSpace::NoWrap);
         bool doEllipsis = (s.textOverflow == TextOverflow::Ellipsis);
 
         bool lineHasContent = !currentLine.children.empty();
@@ -191,31 +191,31 @@ void InlineFormattingContext::FinalizeLineMetrics(LayoutBox &line, LayoutGenerat
         bool isImg    = (run.node->tag == "img");
 
         switch (style.verticalAlign) {
-            case VerticalAlign::Top:
+            case VerticalAlignKeyword::Top:
                 run.y = line.y;
                 break;
-            case VerticalAlign::Bottom:
+            case VerticalAlignKeyword::Bottom:
                 run.y = line.y + line.height - run.height;
                 break;
-            case VerticalAlign::Middle: {
+            case VerticalAlignKeyword::Middle: {
                 int lineXHeight    = maxAscent / 2;
                 int lineMidpointY  = line.y + maxAscent - lineXHeight;
                 run.y = lineMidpointY - (run.height / 2);
                 break;
             }
-            case VerticalAlign::Other: {
+            case VerticalAlignKeyword::Other: {
                 int customOffset = ResolveLength(style.verticalAlignValue, wm.lineHeight, lr.GetWidth(), lr.GetHeight());
                 run.y = isImg ? (baselineY - run.height - customOffset)
                             : (baselineY - wm.ascent - customOffset);
                 break;
             }
-            case VerticalAlign::TextTop:
-            case VerticalAlign::TextBottom:
-            case VerticalAlign::Super:
-            case VerticalAlign::Sub:
+            case VerticalAlignKeyword::TextTop:
+            case VerticalAlignKeyword::TextBottom:
+            case VerticalAlignKeyword::Super:
+            case VerticalAlignKeyword::Sub:
                 std::cerr << "VerticalAlign mode not implemented!\n";
                 break;
-            case VerticalAlign::Baseline:
+            case VerticalAlignKeyword::Baseline:
             default:
                 run.y = isImg ? (baselineY - run.height)
                             : (baselineY - wm.ascent);

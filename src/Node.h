@@ -1,14 +1,18 @@
-//
-// Created by tkdtu on 5/27/2026.
-//
 
 #ifndef BROWSER_NODE_H
 #define BROWSER_NODE_H
+
 #include <string>
 #include <memory>
 #include <vector>
-#include "Color.h"
 #include <unordered_map>
+
+#include "Color.h"
+
+// ============================================================
+// CSS LENGTHS
+// ============================================================
+
 enum class LengthUnit {
     Px,
     Percent,
@@ -22,15 +26,12 @@ enum class LengthUnit {
 struct CSSLength {
     float value = 0.0f;
     LengthUnit unit = LengthUnit::Px;
-
-    // Helper to check if a rule is explicitly provided
-    bool IsSpecified() const { return unit != LengthUnit::Auto; }
-
-    // Helper to resolve the value if it's explicitly pixels
-    int GetFixedPx_Or(int fallback) const {
-        return (unit == LengthUnit::Px) ? static_cast<int>(value) : fallback;
-    }
 };
+
+// ============================================================
+// ENUMS
+// ============================================================
+
 enum class OverflowType {
     Visible,
     Hidden,
@@ -42,15 +43,10 @@ enum class NodeType {
     Doctype,
     Element,
     Text,
-    Image,
     Comment,
+    Image,
 };
-struct ImageData {
-    std::vector<Color> pixels; // Flat array outputted from your custom decoder
-    int intrinsicWidth = 0;    // Real image width from file header
-    int intrinsicHeight = 0;   // Real image height from file header
-    bool isLoaded = false;
-};
+
 enum class DisplayType {
     Block,
     Inline,
@@ -63,16 +59,23 @@ enum class PositionType {
     Relative,
     Absolute
 };
-enum class TextAlign { Left, Center, Right };
+
+enum class TextAlign {
+    Left,
+    Center,
+    Right
+};
+
 enum class TextDecoration {
     None,
     Underline,
     Overline,
     LineThrough,
-    blink,
-    spellingError,
+    Blink,
+    SpellingError,
     GrammarError,
 };
+
 enum class TextDecorationStyle {
     Solid,
     Double,
@@ -80,12 +83,13 @@ enum class TextDecorationStyle {
     Dashed,
     Wavy,
 };
+
 enum class BoxSizing {
     ContentBox,
     BorderBox
 };
 
-enum class VerticalAlign {
+enum class VerticalAlignKeyword {
     Top,
     Middle,
     Bottom,
@@ -94,205 +98,372 @@ enum class VerticalAlign {
     TextTop,
     TextBottom,
     Baseline,
-    Inherit,
-    Initial,
     Other,
 };
-struct StyleSetFlags {
-    bool font_size : 1 = false;
-    bool color : 1 = false;
-    bool display : 1 = false;
-    bool textAlign : 1 = false;
-    bool font_bold : 1 = false;
-    bool font_italic : 1 = false;
 
-    bool margin_top : 1 = false;
-    bool margin_bottom : 1 = false;
-    bool margin_left : 1 = false;
-    bool margin_right : 1 = false;
-
-    bool padding_top : 1 = false;
-    bool padding_bottom : 1 = false;
-    bool padding_left : 1 = false;
-    bool padding_right : 1 = false;
-
-    bool width : 1 = false;
-    bool height : 1 = false;
-
-    bool background : 1 = false;
-
-    bool textOverflow : 1 = false;
-    bool whiteSpace : 1 = false;
-    bool overflow : 1 = false;
-
-    bool boxSizing : 1 = false;
-    bool objectFit : 1 = false;
-
-    bool min_width : 1 = false;
-    bool max_width : 1 = false;
-    bool min_height : 1 = false;
-    bool max_height : 1 = false;
-
-    bool verticalAlign : 1 = false;
-};
 enum class BorderStyle {
-    dotted,
-    dashed,
-    solid,
-    double_border,
-    groove,
-    ridge,
-    inset,
-    outset,
-    none,
-    hidden
+    Dotted,
+    Dashed,
+    Solid,
+    DoubleBorder,
+    Groove,
+    Ridge,
+    Inset,
+    Outset,
+    None,
+    Hidden
 };
+
 enum class ObjectFit {
     Fill,
     Contain,
     Cover,
     None,
-    Scale_Down
+    ScaleDown
 };
+
 enum class WhiteSpace {
-    normal,
-    nowrap,
-    pre,
-    pre_wrap,
-    pre_line,
+    Normal,
+    NoWrap,
+    Pre,
+    PreWrap,
+    PreLine,
 };
+
 enum class TextOverflow {
     Clip,
     Ellipsis,
 };
 
-struct Border_side {
-    CSSLength borderWidth = { 0.0f, LengthUnit::Px };
-    Color borderColor = Color(0, 0, 0);
-    BorderStyle borderStyle = BorderStyle::none;
+// ============================================================
+// IMAGE DATA
+// ============================================================
+
+struct ImageData {
+    std::vector<Color> pixels;
+
+    int intrinsicWidth = 0;
+    int intrinsicHeight = 0;
+
+    bool isLoaded = false;
 };
+
+// ============================================================
+// BORDER
+// ============================================================
+
+struct BorderSide {
+    CSSLength borderWidth = { 0.0f, LengthUnit::Px };
+
+    Color borderColor = Color(0, 0, 0);
+
+    BorderStyle borderStyle = BorderStyle::None;
+};
+
+// ============================================================
+// STYLE FLAGS
+// ============================================================
+
+struct StyleSetFlags {
+    bool font_size = false;
+    bool color = false;
+    bool display = false;
+    bool textAlign = false;
+
+    bool font_bold = false;
+    bool font_italic = false;
+
+    bool margin_top = false;
+    bool margin_bottom = false;
+    bool margin_left = false;
+    bool margin_right = false;
+
+    bool padding_top = false;
+    bool padding_bottom = false;
+    bool padding_left = false;
+    bool padding_right = false;
+
+    bool width = false;
+    bool height = false;
+
+    bool min_width = false;
+    bool max_width = false;
+    bool min_height = false;
+    bool max_height = false;
+
+    bool background = false;
+
+    bool textOverflow = false;
+    bool whiteSpace = false;
+    bool overflow = false;
+
+    bool boxSizing = false;
+    bool objectFit = false;
+
+    bool verticalAlign = false;
+
+    bool border_radius_top_left    = false;
+    bool border_radius_top_right   = false;
+    bool border_radius_bottom_right= false;
+    bool border_radius_bottom_left = false;
+};
+
+// ============================================================
+// SPECIFIED STYLE
+// ============================================================
+
 struct Style {
+    // --------------------------------------------------------
+    // Layout
+    // --------------------------------------------------------
+
     DisplayType display = DisplayType::Inline;
+
     PositionType position = PositionType::Static;
 
     BoxSizing boxSizing = BoxSizing::ContentBox;
 
-    Border_side BorderTop = Border_side();
-    Border_side BorderRight = Border_side();
-    Border_side BorderBottom = Border_side();
-    Border_side BorderLeft = Border_side();
-
-
     ObjectFit objectFit = ObjectFit::Fill;
-    // Margins
+
+    OverflowType overflow = OverflowType::Visible;
+
+    // --------------------------------------------------------
+    // Borders
+    // --------------------------------------------------------
+
+    BorderSide borderTop;
+    BorderSide borderRight;
+    BorderSide borderBottom;
+    BorderSide borderLeft;
+
+    // --------------------------------------------------------
+    // Margin
+    // --------------------------------------------------------
+
     CSSLength margin_top    { 0.0f, LengthUnit::Px };
     CSSLength margin_bottom { 0.0f, LengthUnit::Px };
     CSSLength margin_left   { 0.0f, LengthUnit::Px };
     CSSLength margin_right  { 0.0f, LengthUnit::Px };
 
-    // Paddings
-    CSSLength padding_top   { 0.0f, LengthUnit::Px };
-    CSSLength padding_bottom{ 0.0f, LengthUnit::Px };
-    CSSLength padding_left  { 0.0f, LengthUnit::Px };
-    CSSLength padding_right { 0.0f, LengthUnit::Px };
+    // --------------------------------------------------------
+    // Padding
+    // --------------------------------------------------------
 
-    // Structural Dimensions
-    CSSLength width         { 0.0f, LengthUnit::Auto };
-    CSSLength height        { 0.0f, LengthUnit::Auto };
-    CSSLength min_width     { 0.0f, LengthUnit::Auto };
-    CSSLength max_width     { 0.0f, LengthUnit::Auto };
-    CSSLength min_height    { 0.0f, LengthUnit::Auto };
-    CSSLength max_height    { 0.0f, LengthUnit::Auto };
+    CSSLength padding_top    { 0.0f, LengthUnit::Px };
+    CSSLength padding_bottom { 0.0f, LengthUnit::Px };
+    CSSLength padding_left   { 0.0f, LengthUnit::Px };
+    CSSLength padding_right  { 0.0f, LengthUnit::Px };
 
-    Color color;
-    int offset_x = 0;
-    int offset_y = 0;
+    // --------------------------------------------------------
+    // Border Radius
+    // --------------------------------------------------------
+    CSSLength border_radius_top_left    { 0.0f, LengthUnit::Px };
+    CSSLength border_radius_top_right   { 0.0f, LengthUnit::Px };
+    CSSLength border_radius_bottom_right{ 0.0f, LengthUnit::Px };
+    CSSLength border_radius_bottom_left { 0.0f, LengthUnit::Px };
 
+    // --------------------------------------------------------
+    // Dimensions
+    // --------------------------------------------------------
 
-    TextDecoration textDecoration = TextDecoration::None;
-    Color TextDecorationColor = Color(0, 0, 0);
-    CSSLength TextDecorationThickness = { 1.0f, LengthUnit::Px };
-    TextDecorationStyle textDecorationStyle = TextDecorationStyle::Solid;
+    CSSLength width      { 0.0f, LengthUnit::Auto };
+    CSSLength height     { 0.0f, LengthUnit::Auto };
 
-    WhiteSpace whiteSpace = WhiteSpace::normal;
-    TextOverflow textOverflow = TextOverflow::Clip;
-    OverflowType overflow = OverflowType::Visible;
+    CSSLength min_width  { 0.0f, LengthUnit::Auto };
+    CSSLength max_width  { 0.0f, LengthUnit::Auto };
+
+    CSSLength min_height { 0.0f, LengthUnit::Auto };
+    CSSLength max_height { 0.0f, LengthUnit::Auto };
+
+    // --------------------------------------------------------
+    // Typography
+    // --------------------------------------------------------
 
     std::string font_family;
-    CSSLength font_size = {100.0f, LengthUnit::Percent};
+
+    CSSLength font_size {16.0f, LengthUnit::Px};
 
     bool font_bold = false;
     bool font_italic = false;
-    Color backgroundColor = Color(255, 255, 255); // or make Optional if you want transparency
-    bool hasBackground = false; // false = don't paint, true = paint backgroundColor
 
+    Color color = Color(0, 0, 0);
 
     TextAlign textAlign = TextAlign::Left;
 
-    VerticalAlign verticalAlign = VerticalAlign::Baseline;
-    CSSLength verticalAlignValue; // used if verticalAlign::Other
+    WhiteSpace whiteSpace = WhiteSpace::Normal;
+
+    TextOverflow textOverflow = TextOverflow::Clip;
+
+    // --------------------------------------------------------
+    // Text Decoration
+    // --------------------------------------------------------
+
+    TextDecoration textDecoration = TextDecoration::None;
+
+    TextDecorationStyle textDecorationStyle =
+        TextDecorationStyle::Solid;
+
+    Color textDecorationColor = Color(0, 0, 0);
+
+    CSSLength textDecorationThickness =
+        { 1.0f, LengthUnit::Px };
+
+    // --------------------------------------------------------
+    // Background
+    // --------------------------------------------------------
+
+    bool hasBackground = false;
+
+    Color backgroundColor = Color(255, 255, 255);
+
+    // --------------------------------------------------------
+    // Vertical Align
+    // --------------------------------------------------------
+
+    VerticalAlignKeyword verticalAlign =
+        VerticalAlignKeyword::Baseline;
+
+    CSSLength verticalAlignValue;
+
+    // --------------------------------------------------------
+    // Style state tracking
+    // --------------------------------------------------------
 
     StyleSetFlags set;
-
 };
+
+// ============================================================
+// LAYOUT / RENDER
+// ============================================================
+
 struct Rect {
-    int x, y;
-    int width, height;
+    float x = 0.0f;
+    float y = 0.0f;
+
+    float width = 0.0f;
+    float height = 0.0f;
 };
 
 struct RenderData {
     Rect box;
-    int padding_top;
-    int padding_right;
-    int padding_bottom;
-    int padding_left;
-    int margin_top;
-    int margin_right;
-    int margin_bottom;
-    int margin_left;
+
+    float resolved_padding_top = 0.0f;
+    float resolved_padding_right = 0.0f;
+    float resolved_padding_bottom = 0.0f;
+    float resolved_padding_left = 0.0f;
+
+    float resolved_margin_top = 0.0f;
+    float resolved_margin_right = 0.0f;
+    float resolved_margin_bottom = 0.0f;
+    float resolved_margin_left = 0.0f;
+
+    float offset_x = 0.0f;
+    float offset_y = 0.0f;
 };
+
+// ============================================================
+// DOM NODE
+// ============================================================
+
 struct Node {
-    RenderData renderData;
-    NodeType type;
+
+    // --------------------------------------------------------
+    // DOM Identity
+    // --------------------------------------------------------
+
+    NodeType type = NodeType::Element;
 
     std::string tag;
+
     std::string id;
+
     std::string class_name;
 
-    std::string code;
-    std::string script_name;
+    std::vector<std::string> classList;
+
+    // --------------------------------------------------------
+    // Content
+    // --------------------------------------------------------
 
     std::string text;
 
+    std::string code;
+
+    std::string script_name;
+
+    // --------------------------------------------------------
+    // Tree
+    // --------------------------------------------------------
+
+    // Non-owning pointer.
+    // Safe because parent owns children through unique_ptr.
     Node* parent = nullptr;
 
     std::vector<std::unique_ptr<Node>> children;
+
+    // --------------------------------------------------------
+    // Attributes
+    // --------------------------------------------------------
+
     std::unordered_map<std::string, std::string> attributes;
-    // Quick helper to check if an attribute exists
-    bool HasAttribute(const std::string& key) const {
+
+    bool HasAttribute(const std::string& key) const
+    {
         return attributes.find(key) != attributes.end();
     }
 
-    // Quick helper to get a value safely
-    std::string GetAttribute(const std::string& key, const std::string& defaultValue = "") const {
+    std::string GetAttribute(
+        const std::string& key,
+        const std::string& defaultValue = "") const
+    {
         auto it = attributes.find(key);
-        return (it != attributes.end()) ? it->second : defaultValue;
+
+        return (it != attributes.end())
+            ? it->second
+            : defaultValue;
     }
-    Style computedStyle;
+
+    // --------------------------------------------------------
+    // Styles
+    // --------------------------------------------------------
+
     Style specifiedStyle;
 
-    bool Reconstruct; // update this node and children
+    Style computedStyle;
 
-    // Attached asset payload if type == NodeType::Image
+    // --------------------------------------------------------
+    // Render Data
+    // --------------------------------------------------------
+
+    RenderData renderData;
+
+    // --------------------------------------------------------
+    // Asset payloads
+    // --------------------------------------------------------
+
     std::shared_ptr<ImageData> imageData = nullptr;
 
+    // --------------------------------------------------------
+    // Invalidations
+    // --------------------------------------------------------
+
+    bool reconstruct = false;
+
+    // --------------------------------------------------------
+    // Lifetime
+    // --------------------------------------------------------
+
     Node() = default;
+
     ~Node() = default;
 
     Node(const Node&) = delete;
+
     Node& operator=(const Node&) = delete;
 
     Node(Node&&) noexcept = default;
+
     Node& operator=(Node&&) noexcept = default;
 };
-#endif //BROWSER_NODE_H
+
+#endif // BROWSER_NODE_H

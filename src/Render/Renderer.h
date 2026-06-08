@@ -79,7 +79,16 @@ public:
         int radius,
         Color color
     );
-
+    void FillRectRounded(
+        int x,
+        int y,
+        int w,
+        int h,
+        int radius_top_left,
+        int radius_top_right,
+        int radius_bottom_left,
+        int radius_bottom_right,
+        Color color);
     void DrawCircle(
         int cx,
         int cy,

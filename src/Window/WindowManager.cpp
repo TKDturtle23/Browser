@@ -103,15 +103,15 @@ fallbackFont("arial/ARIAL.TTF", 14)
             int bw = node->renderData.box.width;
             int bh = node->renderData.box.height;
 
-            int pTop    = node->renderData.padding_top;
-            int pBottom = node->renderData.padding_bottom;
-            int pLeft   = node->renderData.padding_left;
-            int pRight  = node->renderData.padding_right;
+            int pTop    = node->renderData.resolved_padding_top;
+            int pBottom = node->renderData.resolved_padding_bottom;
+            int pLeft   = node->renderData.resolved_padding_left;
+            int pRight  = node->renderData.resolved_padding_right;
 
-            int mTop    = node->renderData.margin_top;
-            int mBottom = node->renderData.margin_bottom;
-            int mLeft   = node->renderData.margin_left;
-            int mRight  = node->renderData.margin_right;
+            int mTop    = node->renderData.resolved_margin_top;
+            int mBottom = node->renderData.resolved_margin_bottom;
+            int mLeft   = node->renderData.resolved_margin_left;
+            int mRight  = node->renderData.resolved_margin_right;
 
             // Determine geometry behavior based on computed style
             if (node->computedStyle.boxSizing == BoxSizing::BorderBox) {
@@ -289,7 +289,7 @@ void WindowManager::Run() {
 void WindowManager::UpdateUI() {
 
     ui_manager->BeginFrame();
-    ui_manager->BeginWindow("Top_Window", {0, 0, platform->GetWidth(), TOP_WIDTH});
+    ui_manager->BeginWindow("Top_Window", {0, 0, (float)platform->GetWidth(), TOP_WIDTH});
 
 
 

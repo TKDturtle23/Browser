@@ -185,6 +185,27 @@ void RendererSurface::FillRectBeveled(
     backend->SubmitCommand(cmd);
 }
 
+void RendererSurface::FillRectRounded(int x, int y, int w, int h, int radius_top_left, int radius_top_right,
+    int radius_bottom_left, int radius_bottom_right, Color color)
+{
+    RenderCommand cmd{};
+    cmd.target = target;
+    cmd.type = RenderCommandType::FillRectRounded;
+    cmd.fillRectRounded = {
+        .x = x,
+        .y = y,
+        .w = w,
+        .h = h,
+        .tl = radius_top_left,
+        .tr = radius_top_right,
+        .bl = radius_bottom_left,
+        .br = radius_bottom_right,
+        .color = color
+    };
+
+    backend->SubmitCommand(cmd);
+}
+
 void RendererSurface::DrawCircle(
     int cx,
     int cy,

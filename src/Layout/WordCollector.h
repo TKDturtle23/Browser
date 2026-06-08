@@ -36,11 +36,12 @@ public:
     {}
 
     void Visit(Node& node);
+    void Visit(Node& node, int inheritedFontSize);
 
 private:
     void VisitImage(Node& node);
 
-    void VisitText(Node& node);
+    void VisitText(Node& node, int inheritedFontSize);
 
     static int MeasureText(Font& font, const std::string& s);
     int vw, vh;

@@ -396,7 +396,7 @@ void UIManager::Unindent(int width) {
 
 void UIManager::BeginGroup() {
     auto& lc = Layout();
-    groupStack.push_back({{lc.cursorX, lc.cursorY, 0, 0}, (int)layoutStack.size()});
+    groupStack.push_back({{(float)lc.cursorX, (float)lc.cursorY, 0, 0}, (int)layoutStack.size()});
 }
 
 Rect UIManager::EndGroup() {

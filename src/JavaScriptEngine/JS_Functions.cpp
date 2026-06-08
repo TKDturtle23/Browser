@@ -39,6 +39,7 @@ Node* Find_Element_By_Class(std::string Class, Node* DOM) {
             return found;
         }
     }
+    return nullptr;
 }
 Node* Find_Body(Node* DOM) {
     if (DOM->tag == "body") {
@@ -129,7 +130,7 @@ js_ctx = context;
             Parser parser;
             auto sec = parser.Parse(tokens);
             element->children = std::move(sec.children);
-            element->Reconstruct = true;
+            element->reconstruct = true;
             std::cout << "[DOM Engine] Mutation Detected! New innerHTML: " << value_str << std::endl;
             break;
         }
@@ -177,7 +178,7 @@ JSValue JavascriptFunctions::js_document_set_data(JSContext *ctx, JSValue this_v
                     Parser parser;
                     auto sec = parser.Parse(tokens);
                     body->children = std::move(sec.children);
-                    body->Reconstruct = true;
+                    body->reconstruct = true;
                     std::cout << "[DOM Engine] Mutation Detected! New innerHTML: " << value_str << std::endl;
                 }
             }

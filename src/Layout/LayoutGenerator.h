@@ -8,6 +8,7 @@
 #include "../Parser.h"
 #include "../Text/Font.h"
 #include "LayoutHelper.h"
+#include "Context/BlockFormattingContext.h"
 
 // ---------------------------------------------------------------------------
 //  LayoutRenderer
@@ -33,10 +34,9 @@ public:
 
     // Lay out a single block-level node.  Delegates child layout to the
     // appropriate FormattingContext.
-    LayoutBox LayoutBlock(Node& node,
-                          int containerX,
-                          int containerY,
-                          int containerWidth, int containerHeight);
+    BlockResult LayoutBlock(Node& node, int containerX, int containerY,
+                           int containerWidth, int containerHeight);
+
 
     int GetWidth() const { return renderer.GetWidth(); }
     int GetHeight() const { return renderer.GetHeight(); }

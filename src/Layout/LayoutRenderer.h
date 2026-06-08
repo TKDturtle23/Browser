@@ -29,7 +29,7 @@ private:
     void RenderTextRun(const LayoutBox& box);
     void RenderBlock(const LayoutBox& box);
 
-    void RenderSingleBorderEdge(const Border_side &edge, int start, int end, int fixedCoord, bool isHorizontal);
+    void RenderSingleBorderEdge(const BorderSide &edge, int start, int end, int fixedCoord, bool isHorizontal);
 
     void RenderLine(const LayoutBox &box, int Text_Height);
     void RenderDecoration(
