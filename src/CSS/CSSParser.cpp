@@ -455,7 +455,7 @@ static std::optional<BorderStyle> ParseBorderStyle(std::string_view val) {
     if (val == "dashed") return BorderStyle::Dashed;
     return std::nullopt;
 }
-//#define CSS_DEBUG
+#define CSS_DEBUG
 #ifdef CSS_DEBUG
   #define CSS_WARN(msg) do { std::cerr << "[CSS] " << msg << "\n"; } while(0)
 #else

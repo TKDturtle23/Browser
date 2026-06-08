@@ -62,26 +62,37 @@ fallbackFont("arial/ARIAL.TTF", 14)
         tab.manager->Update();
     }
 
-    OnRender = [this]() {
-        renderer->Resize(platform->GetWidth(), platform->GetHeight());
+OnRender = [this]() {
+        // 1. Initialize the backend canvas context for this frame pass
+        renderBackend->BeginFrame();
 
-        ui_manager->Resize(platform->GetWidth(), TOP_WIDTH);
+        // 2. Snapshot current dimensions and scale presentation targets
+        int currentWidth  = platform->GetWidth();
+        int currentHeight = platform->GetHeight();
 
-        renderer->Clear(Color(255,255,255,255));
+        renderer->Resize(currentWidth, currentHeight);
+        ui_manager->Resize(currentWidth, TOP_WIDTH);
 
+        // 3. Clear canvas with baseline background color
+        renderer->Clear(Color(255, 255, 255, 255));
+
+        // 4. Update UI component bounding zones
         UpdateUI();
 
+        // 5. Update and scale the active tab Viewport Layout
         auto& activeManager = tabs[activeTabIndex].manager;
+        int targetContentHeight = currentHeight - TOP_WIDTH;
+        if (targetContentHeight < 0) targetContentHeight = 0;
 
-        activeManager->OnRender(
-            platform->GetWidth(),
-            platform->GetHeight() - TOP_WIDTH
-        );
+        // Force viewport tree layout calculations to synchronize with new size
+        activeManager->Resize(currentWidth, targetContentHeight);
+        activeManager->OnRender(currentWidth, targetContentHeight);
 
+        // 6. Blit the composited texture layers to the core surface
         renderer->BlitFrom(
             *ui_manager->GetRenderer(),
-            0,0,
-            0,0,
+            0, 0,
+            0, 0,
             renderer->GetWidth(),
             TOP_WIDTH
         );
@@ -89,15 +100,15 @@ fallbackFont("arial/ARIAL.TTF", 14)
         renderer->BlitFrom(
             activeManager->GetRenderer(),
             0, TOP_WIDTH,
-            0,0,
+            0, 0,
             activeManager->GetWidth(),
             activeManager->GetHeight()
         );
 
+        // 7. Debugger Box Model Overlay
         if (auto node = debugWindow->GetSelectedNode()) {
-            int constYOffset = TOP_WIDTH; // Your window/UI global title bar offset
+            int constYOffset = TOP_WIDTH;
 
-            // Pull positioning and spacing directly from your RenderData layout output
             int bx = node->renderData.box.x;
             int by = node->renderData.box.y + constYOffset;
             int bw = node->renderData.box.width;
@@ -113,54 +124,29 @@ fallbackFont("arial/ARIAL.TTF", 14)
             int mLeft   = node->renderData.resolved_margin_left;
             int mRight  = node->renderData.resolved_margin_right;
 
-            // Determine geometry behavior based on computed style
             if (node->computedStyle.boxSizing == BoxSizing::BorderBox) {
-                // -----------------------------------------------------------------
-                // CASE A: BORDER-BOX
-                // box represents total outer element size (excluding margin).
-                // Padding is inside. Content is further inside.
-                // -----------------------------------------------------------------
-
-                // 1. Margin (Outward)
-                renderer->FillRect(bx - mLeft, by - mTop, bw + mLeft + mRight, bh + mTop + mBottom, Color(0, 255, 255, 64)); // yellow
-
-                // 2. Border/Padding Area (Base Box bounds)
-                renderer->FillRect(bx, by, bw, bh, Color(255, 0, 255, 64)); // purple
-
-                // 3. Content Bounds (Inward)
-                int cx = bx + pLeft;
-                int cy = by + pTop;
-                int cw = bw - pLeft - pRight;
-                int ch = bh - pTop - pBottom;
-                renderer->FillRect(cx, cy, cw, ch, Color(255, 0, 0, 64)); // blue
-
+                renderer->FillRect(bx - mLeft, by - mTop, bw + mLeft + mRight, bh + mTop + mBottom, Color(0, 255, 255, 64));
+                renderer->FillRect(bx, by, bw, bh, Color(255, 0, 255, 64));
+                int cx = bx + pLeft; int cy = by + pTop; int cw = bw - pLeft - pRight; int ch = bh - pTop - pBottom;
+                renderer->FillRect(cx, cy, cw, ch, Color(255, 0, 0, 64));
             } else {
-                // -----------------------------------------------------------------
-                // CASE B: CONTENT-BOX
-                // box represents only the core content space.
-                // Padding expands outward from box; Margin expands outward from padding.
-                // -----------------------------------------------------------------
-
-                // 1. Margin Bounds (Outmost loop)
-                int mx = bx - pLeft - mLeft;
-                int my = by - pTop - mTop;
-                int mw = bw + pLeft + pRight + mLeft + mRight;
-                int mh = bh + pTop + pBottom + mTop + mBottom;
-                renderer->FillRect(mx, my, mw, mh, Color(0, 255, 255, 64)); // yellow
-
-                // 2. Padding Bounds (Middle loop)
-                int px = bx - pLeft;
-                int py = by - pTop;
-                int pw = bw + pLeft + pRight;
-                int ph = bh + pTop + pBottom;
-                renderer->FillRect(px, py, pw, ph, Color(255, 0, 255, 64)); // purple
-
-                // 3. Content Bounds (Innermost core)
-                renderer->FillRect(bx, by, bw, bh, Color(255, 0, 0, 64)); // blue
+                int mx = bx - pLeft - mLeft; int my = by - pTop - mTop; int mw = bw + pLeft + pRight + mLeft + mRight; int mh = bh + pTop + pBottom + mTop + mBottom;
+                renderer->FillRect(mx, my, mw, mh, Color(0, 255, 255, 64));
+                int px = bx - pLeft; int py = by - pTop; int pw = bw + pLeft + pRight; int ph = bh + pTop + pBottom;
+                renderer->FillRect(px, py, pw, ph, Color(255, 0, 255, 64));
+                renderer->FillRect(bx, by, bw, bh, Color(255, 0, 0, 64));
             }
         }
 
-            };
+        // 8. Draw secondary debug window windows over main surface if active
+        if (debugWindow->IsOpen()) {
+            debugWindow->Render();
+        }
+
+        // 9. Finalize frame pipeline commands and present to screen immediately
+        renderBackend->EndFrame();
+        renderBackend->Present();
+    };
     platform->onRender = OnRender;
 
     debugWindow->FeedJS(&jsEngine);
@@ -263,18 +249,7 @@ void WindowManager::Run() {
         }
 
         if (shouldRender) {
-
-            renderBackend->BeginFrame();
-
             OnRender();
-
-            if (debugWindow->IsOpen()) {
-                debugWindow->Render();
-            }
-
-            renderBackend->EndFrame();
-            renderBackend->Present();
-
             platform->needsRedraw = false;
         }
 
