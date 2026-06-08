@@ -123,10 +123,12 @@ public:
     virtual void     AttachRenderTarget(WindowID window, RenderTargetID target) = 0;
 
     // ----- Render target management -----
-    virtual RenderTargetID CreateRenderTarget (int width, int height)        = 0;
+    virtual RenderTargetID CreateRenderTarget (int width, int height,
+        bool blend = true)        = 0;
     virtual void           DestroyRenderTarget(RenderTargetID target)        = 0;
     virtual void           ResizeRenderTarget (RenderTargetID target,
                                                int width, int height)        = 0;
+    virtual Color ReadPixel(RenderTargetID target, int x, int y, bool front) = 0;
 
     // ----- Frame lifecycle -----
     virtual void BeginFrame   ()                          = 0;

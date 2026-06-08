@@ -34,8 +34,10 @@ public:
 
     RenderTargetID CreateRenderTarget(
         int width,
-        int height
+        int height,
+        bool blend = true
     ) override;
+    Color ReadPixel(RenderTargetID target, int x, int y, bool front) override;
 
     void DestroyRenderTarget(
         RenderTargetID target
@@ -95,6 +97,8 @@ private:
     RenderTargetID nextTargetID = 1;
 
     WindowID nextWindowID = 1;
+    RenderTargetID activeTargetID  = 0;
+    std::vector<RenderTargetID> targetStack;
 };
 
 #endif //BROWSER_SOFTWAREBACKEND_H

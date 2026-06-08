@@ -204,7 +204,7 @@ void InlineFormattingContext::FinalizeLineMetrics(LayoutBox &line, LayoutGenerat
                 break;
             }
             case VerticalAlignKeyword::Other: {
-                int customOffset = ResolveLength(style.verticalAlignValue, wm.lineHeight, lr.GetWidth(), lr.GetHeight());
+                int customOffset = ResolveLength(style.verticalAlignValue, wm.lineHeight, lr.GetWidth(), lr.GetHeight(), run.fontSize);
                 run.y = isImg ? (baselineY - run.height - customOffset)
                             : (baselineY - wm.ascent - customOffset);
                 break;

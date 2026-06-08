@@ -40,6 +40,8 @@ void RendererSurface::Resize(
     );
 }
 
+
+
 void RendererSurface::Clear(Color color) {
     RenderCommand cmd{};
     cmd.target = target;
@@ -184,7 +186,20 @@ void RendererSurface::FillRectBeveled(
 
     backend->SubmitCommand(cmd);
 }
+void RendererSurface::PushTarget(RenderTargetID t)
+{
+    targetStack.push_back(target);
+    target = t;
+}
 
+void RendererSurface::PopTarget()
+{
+    if (!targetStack.empty())
+    {
+        target = targetStack.back();
+        targetStack.pop_back();
+    }
+}
 void RendererSurface::FillRectRounded(int x, int y, int w, int h, int radius_top_left, int radius_top_right,
     int radius_bottom_left, int radius_bottom_right, Color color)
 {
@@ -302,4 +317,9 @@ void RendererSurface::BlitFrom(
 
 RenderTargetID RendererSurface::GetTargetID() const {
     return target;
+}
+
+Color RendererSurface::ReadPixel(RenderTargetID target, int x, int y, bool front) const
+{
+    return backend->ReadPixel(target, x, y, front);
 }

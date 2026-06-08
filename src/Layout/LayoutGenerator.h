@@ -23,11 +23,11 @@ public:
 
 
 
-    BoxEdges ResolvePadding(const Style &s, int containerWidth) const;
+    BoxEdges ResolvePadding(const Style& s, int containerWidth, int resolved_font_size) const;
 
-    BoxEdges ResolveBorders(const Style &s) const;
+    BoxEdges ResolveBorders(const Style& s, float FontSize) const;
 
-    BoxEdges ResolveMargins(const Style &s, int containerWidth) const;
+    BoxEdges ResolveMargins(const Style& s, int containerWidth, int resolved_font_size) const;
 
     void ApplyMarginCentering(const Style &s, BoxEdges &margin, int containerWidth, int boxWidth) const;
 

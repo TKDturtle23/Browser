@@ -25,7 +25,8 @@ public:
 
     RenderTargetID CreateRenderTarget(
         int width,
-        int height
+        int height,
+        bool blend = true
     ) override;
 
     void DestroyRenderTarget(
@@ -56,8 +57,11 @@ public:
     ) override;
     void EndFrame() override;
     void Present() override;
-    TextureID CreateFontAtlas(int width, int height) override;
 
+
+
+    TextureID CreateFontAtlas(int width, int height) override;
+    Color ReadPixel(RenderTargetID target, int x, int y, bool front) override;
     void UpdateTextureSubImage(TextureID texture, int x, int y,
                                        int width, int height,
                                        const uint8_t* pixels) override;
@@ -75,6 +79,7 @@ private:
         int height;
         GLuint fbo;          // Framebuffer Object Handle
         GLuint colorTexture; // Color Attachment Texture Handle
+        bool blend = true;
     };
 
     // Translation dispatcher for specific primitives
@@ -113,6 +118,8 @@ private:
     GLint  circleShaderProjLoc = -1;
     GLint  circleShaderMaskLoc = -1;
     float  activeMask[4]       = { -1.f, -1.f, 1.f, 1.f };
+
+
 
 };
 

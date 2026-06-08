@@ -10,7 +10,15 @@
 #include "JavaScriptEngine/JavaScriptEngine.h"
 #include "Layout/LayoutRenderer.h"
 
+struct ViewportIO
+{
+    int mouse_drag_x = 0, mouse_drag_y = 0;
+    int mouse_x = -1, mouse_y = -1;
+    bool is_dragging = false;
+    bool dragged = false;
 
+    bool Mouse_clicked = false;
+};
 class ViewportManager {
 public:
 
@@ -18,6 +26,8 @@ public:
 
     ~ViewportManager();
 
+    void MoveMouse(int x, int y);
+    void SetMouseClicked(bool clicked);
 
 
     void Init();
@@ -39,6 +49,7 @@ public:
     void StartScripts();
     const Node* GetDOMRoot() {return &dom; }
     std::string GetTitle() {return title.empty() ? CurrentLink : title; }
+    LayoutBox *HitTest(int x, int y);
 private:
     std::string title;
     void FindTitle();
@@ -56,6 +67,8 @@ private:
     JavaScriptEngine& engine;
     LayoutRenderer layoutRenderer;
     Node dom;
+
+    ViewportIO IO;
 };
 
 

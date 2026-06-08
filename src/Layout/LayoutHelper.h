@@ -14,17 +14,36 @@ struct FontGroup {
     std::shared_ptr<Font> italic;
     std::shared_ptr<Font> boldItalic;
 };
+
 enum class BoxKind {
     Block,
     Line,
     TextRun,
 };
+
 struct BoxEdges {
-    int top = 0, right = 0, bottom = 0, left = 0;
+    double top = 0, right = 0, bottom = 0, left = 0;
     BoxEdges() = default;
-    BoxEdges(int top, int right, int bottom, int left) : top(top), right(right), bottom(bottom), left(left) {}
-    int Horizontal() const { return left + right; }
-    int Vertical() const { return top + bottom; }
+    BoxEdges(double top, double right, double bottom, double left) : top(top), right(right), bottom(bottom), left(left) {}
+    double Horizontal() const { return left + right; }
+    double Vertical() const { return top + bottom; }
+};
+struct text_char
+{
+    char c;
+    bool highlighted = false;
+};
+struct Text
+{
+std::vector<text_char> chars;
+    Text() = default;
+    Text(std::string t)
+    {
+        for (auto &c : t)
+        {
+            chars.push_back({c, false});
+        }
+    }
 };
 struct LayoutBox {
     BoxKind kind = BoxKind::Block;
@@ -33,7 +52,7 @@ struct LayoutBox {
     int y = 0;
     int width = 0;
     int height = 0;
-    int fontSize = 0; // for TextRun boxes
+    double fontSize = 0; // for TextRun boxes
 
     int lineAscent = 0;
     int lineDescent = 0;
@@ -41,16 +60,18 @@ struct LayoutBox {
     Node* node = nullptr;
 
     // Only used when kind == TextRun.
-    std::string text;
+    Text text;
 
     std::vector<LayoutBox> children;
 };
 bool IsBlank(const std::string& s);
-int ResolveLength(const CSSLength& len, int referenceSize, int Vw, int Vh);
-int ResolveFontSize(const CSSLength& fontSize, int vw, int vh, float inheritedFontSize);
+double ResolveLength(const CSSLength& len, double referenceSize, int Vw, int Vh, float fontSize);
+double ResolveFontSize(const CSSLength& fontSize, int vw, int vh, float inheritedFontSize);
 bool IsNonRendered(const std::string& tag);
 bool IsLayoutIgnored(const Node& n);
-int GetVisibleBorderWidth(const BorderSide& side, int vw, int vh);
+double GetVisibleBorderWidth(const BorderSide& side, int vw, int vh, float fontSize);
 bool IsInlineTag(const std::string& tag);
 bool IsInlineChild(const Node& n);
+
+double ResolveFontSizeInherit(Node* n, int vw, int vh);
 #endif //BROWSER_LAYOUTHELPER_H

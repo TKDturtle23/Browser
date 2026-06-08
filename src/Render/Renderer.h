@@ -79,6 +79,8 @@ public:
         int radius,
         Color color
     );
+    void PushTarget(RenderTargetID target);
+    void PopTarget();
     void FillRectRounded(
         int x,
         int y,
@@ -127,10 +129,11 @@ public:
     );
 
     RenderTargetID GetTargetID() const;
-
+    Color ReadPixel(RenderTargetID target, int x, int y, bool front) const;
 private:
 
     RenderTargetID target;
+    std::vector<RenderTargetID> targetStack;
 
     int width;
     int height;

@@ -13,6 +13,8 @@
 // CSS LENGTHS
 // ============================================================
 
+struct LayoutBox;
+
 enum class LengthUnit {
     Px,
     Percent,
@@ -346,6 +348,7 @@ struct Rect {
 
 struct RenderData {
     Rect box;
+    LayoutBox* layout;
 
     float resolved_padding_top = 0.0f;
     float resolved_padding_right = 0.0f;

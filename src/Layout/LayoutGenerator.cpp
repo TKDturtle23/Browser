@@ -11,7 +11,7 @@
 #include "LayoutHelper.h"
 #include "WordCollector.h"
 #include "Context/BlockFormattingContext.h"
-#define ResolveFromWindow(length, baseWidth) ResolveLength(length, baseWidth, renderer.GetWidth(), renderer.GetHeight())
+#define ResolveFromWindow(length, baseWidth, inheritedFontSize) ResolveLength(length, baseWidth, renderer.GetWidth(), renderer.GetHeight(), inheritedFontSize)
 
 
 
@@ -21,30 +21,31 @@ LayoutGenerator::LayoutGenerator(RendererSurface& renderer)
 
 
 
-BoxEdges LayoutGenerator::ResolvePadding(const Style& s, int containerWidth) const {
+BoxEdges LayoutGenerator::ResolvePadding(const Style& s, int containerWidth, int resolved_font_size) const {
+
     return {
-        ResolveFromWindow(s.padding_top,    containerWidth),
-        ResolveFromWindow(s.padding_right,   containerWidth),
-        ResolveFromWindow(s.padding_bottom, containerWidth),
-        ResolveFromWindow(s.padding_left,   containerWidth)
+        ResolveFromWindow(s.padding_top,    containerWidth, resolved_font_size),
+        ResolveFromWindow(s.padding_right,   containerWidth, resolved_font_size),
+        ResolveFromWindow(s.padding_bottom, containerWidth, resolved_font_size),
+        ResolveFromWindow(s.padding_left,   containerWidth, resolved_font_size)
     };
 }
 
-BoxEdges LayoutGenerator::ResolveBorders(const Style& s) const {
+BoxEdges LayoutGenerator::ResolveBorders(const Style& s, float FontSize) const {
     return {
-        GetVisibleBorderWidth(s.borderTop,    renderer.GetWidth(), renderer.GetHeight()),
-        GetVisibleBorderWidth(s.borderRight,   renderer.GetWidth(), renderer.GetHeight()),
-        GetVisibleBorderWidth(s.borderBottom,  renderer.GetWidth(), renderer.GetHeight()),
-        GetVisibleBorderWidth(s.borderLeft,    renderer.GetWidth(), renderer.GetHeight())
+        GetVisibleBorderWidth(s.borderTop,    renderer.GetWidth(), renderer.GetHeight(), FontSize),
+        GetVisibleBorderWidth(s.borderRight,   renderer.GetWidth(), renderer.GetHeight(), FontSize),
+        GetVisibleBorderWidth(s.borderBottom,  renderer.GetWidth(), renderer.GetHeight(), FontSize),
+        GetVisibleBorderWidth(s.borderLeft,    renderer.GetWidth(), renderer.GetHeight(), FontSize)
     };
 }
 
-BoxEdges LayoutGenerator::ResolveMargins(const Style& s, int containerWidth) const {
+BoxEdges LayoutGenerator::ResolveMargins(const Style& s, int containerWidth, int resolved_font_size) const {
     return {
-        (s.margin_top.unit    == LengthUnit::Auto) ? 0 : ResolveFromWindow(s.margin_top,    containerWidth),
-        (s.margin_right.unit  == LengthUnit::Auto) ? 0 : ResolveFromWindow(s.margin_right,  containerWidth),
-        (s.margin_bottom.unit == LengthUnit::Auto) ? 0 : ResolveFromWindow(s.margin_bottom, containerWidth),
-        (s.margin_left.unit   == LengthUnit::Auto) ? 0 : ResolveFromWindow(s.margin_left,   containerWidth)
+        (s.margin_top.unit    == LengthUnit::Auto) ? 0 : ResolveFromWindow(s.margin_top,    containerWidth, resolved_font_size),
+        (s.margin_right.unit  == LengthUnit::Auto) ? 0 : ResolveFromWindow(s.margin_right,  containerWidth, resolved_font_size),
+        (s.margin_bottom.unit == LengthUnit::Auto) ? 0 : ResolveFromWindow(s.margin_bottom, containerWidth, resolved_font_size),
+        (s.margin_left.unit   == LengthUnit::Auto) ? 0 : ResolveFromWindow(s.margin_left,   containerWidth, resolved_font_size)
     };
 }
 
@@ -67,11 +68,11 @@ void LayoutGenerator::ApplyMarginCentering(const Style& s, BoxEdges& margin, int
 
 BlockResult LayoutGenerator::LayoutBlock(Node& node, int containerX, int containerY, int containerWidth, int containerHeight) {
     const Style& s = node.computedStyle;
-
+    int InheritedFontSize = ResolveFontSizeInherit(&node, renderer.GetWidth(), renderer.GetHeight());
     // 1. Resolve Box Model Geometry
-    BoxEdges padding = ResolvePadding(s, containerWidth);
-    BoxEdges border  = ResolveBorders(s);
-    BoxEdges margin  = ResolveMargins(s, containerWidth);
+    BoxEdges padding = ResolvePadding(s, containerWidth, InheritedFontSize);
+    BoxEdges border  = ResolveBorders(s, InheritedFontSize);
+    BoxEdges margin  = ResolveMargins(s, containerWidth, InheritedFontSize);
 
     // 2. Resolve Core Width
     bool hasExplicitWidth = (s.width.unit != LengthUnit::Auto);
@@ -80,7 +81,7 @@ BlockResult LayoutGenerator::LayoutBlock(Node& node, int containerX, int contain
     box.node = &node;
 
     if (hasExplicitWidth) {
-        int computedContent = ResolveFromWindow(s.width, containerWidth);
+        int computedContent = ResolveFromWindow(s.width, containerWidth, InheritedFontSize);
         box.width = (s.boxSizing == BoxSizing::ContentBox)
                     ? computedContent + padding.Horizontal() + border.Horizontal()
                     : computedContent;
@@ -95,8 +96,8 @@ BlockResult LayoutGenerator::LayoutBlock(Node& node, int containerX, int contain
 
     int contentX      = box.x + border.left + padding.left;
     int contentY      = box.y + border.top  + padding.top;
-    int contentWidth  = std::max(0, box.width - padding.Horizontal() - border.Horizontal());
-    int contentHeight = std::max(0, containerHeight - padding.Vertical() - border.Vertical());
+    int contentWidth  = std::max(0, static_cast<int>(box.width - padding.Horizontal() - border.Horizontal()));
+    int contentHeight = std::max(0, static_cast<int>(containerHeight - padding.Vertical() - border.Vertical()));
 
     // 4. Layout Children via BFC
     auto ctx = std::make_unique<BlockFormattingContext>(*this);
@@ -109,17 +110,19 @@ BlockResult LayoutGenerator::LayoutBlock(Node& node, int containerX, int contain
     // the three-way collapse with the next sibling's margin-top.
     // If there IS a bottom edge, the margin is contained — add it to endY so
     // it contributes to this box's height, and report zero escaped margin.
-    int trailingMargin   = ctx->GetLastChildMarginBottom();
+    double trailingMargin   = ctx->GetLastChildMarginBottom();
     bool hasBottomEdge   = (padding.bottom > 0 || border.bottom > 0);
-    int escapedMargin    = 0;
+    double escapedMargin    = 0;
 
     if (hasBottomEdge) {
-        endY += trailingMargin;   // contained: add to content height
-        escapedMargin = 0;
+        endY += trailingMargin;   // last child's margin is contained
     } else {
-        escapedMargin = trailingMargin;  // escapes: do NOT add to endY
+        // Last child's margin collapses through to us
+        escapedMargin = std::max(escapedMargin, trailingMargin);
     }
 
+    // Always: our own margin_bottom escapes to the parent BFC
+    escapedMargin = std::max(escapedMargin, margin.bottom);
     // 5. Shrink-to-Fit Pass
     bool shrinkToFit = (node.tag == "span" || node.tag == "button");
     if (!hasExplicitWidth && shrinkToFit && !box.children.empty()) {
@@ -138,7 +141,7 @@ BlockResult LayoutGenerator::LayoutBlock(Node& node, int containerX, int contain
 
     // 6. Resolve Height
     if (s.height.unit != LengthUnit::Auto) {
-        int computedContent = ResolveFromWindow(s.height, containerHeight);
+        int computedContent = ResolveFromWindow(s.height, containerHeight, InheritedFontSize);
         box.height = (s.boxSizing == BoxSizing::ContentBox)
                      ? computedContent + padding.Vertical() + border.Vertical()
                      : computedContent;
@@ -149,8 +152,8 @@ BlockResult LayoutGenerator::LayoutBlock(Node& node, int containerX, int contain
     }
 
     // Clamp min/max height
-    if (s.max_height.unit != LengthUnit::Auto) box.height = std::min(box.height, ResolveFromWindow(s.max_height, 0));
-    if (s.min_height.unit != LengthUnit::Auto) box.height = std::max(box.height, ResolveFromWindow(s.min_height, 0));
+    if (s.max_height.unit != LengthUnit::Auto) box.height = std::min(box.height, (int)ResolveFromWindow(s.max_height, 0, InheritedFontSize));
+    if (s.min_height.unit != LengthUnit::Auto) box.height = std::max(box.height, (int)ResolveFromWindow(s.min_height, 0, InheritedFontSize));
 
     // 7. Write Back Debug Data
     auto& rd = box.node->renderData;
@@ -164,6 +167,7 @@ BlockResult LayoutGenerator::LayoutBlock(Node& node, int containerX, int contain
 
     return { std::move(box), escapedMargin };
 }
+
 
 void LayoutGenerator::Update(Node& dom) {
     body = nullptr;
@@ -180,7 +184,8 @@ void LayoutGenerator::Update(Node& dom) {
     body = findBody(dom);
     assert(body && "DOM must contain a <body> element");
 
-    int bodyMarginTop = ResolveLength(body->computedStyle.margin_top, renderer.GetWidth(), renderer.GetWidth(), renderer.GetHeight());
+    int bodyMarginTop = ResolveLength(body->computedStyle.margin_top, renderer.GetWidth(), renderer.GetWidth(),
+        renderer.GetHeight(), ResolveFontSize(body->computedStyle.font_size, renderer.GetWidth(), renderer.GetHeight(), 16));
     // Update() is the root of the layout tree — nothing above it to collapse
     // into, so we discard escapedMarginBottom here intentionally.
     BlockResult result = LayoutBlock(*body, 0, bodyMarginTop, renderer.GetWidth(), renderer.GetHeight());

@@ -11,11 +11,28 @@
 #include "Context/FontManager.h"
 
 
-LayoutRenderer::LayoutRenderer(RendererSurface &renderer) : renderer(renderer){}
+LayoutRenderer::LayoutRenderer(RendererSurface &renderer) : renderer(renderer)
+{
+pickTarget = IRenderBackend::GetRenderBackend().get()->CreateRenderTarget(renderer.GetWidth(), renderer.GetHeight(), false);
+}
 
-void LayoutRenderer::RenderRoot(const LayoutBox &root) {
+void LayoutRenderer::resize(int x, int y)
+{
+}
+
+void LayoutRenderer::RenderRoot(LayoutBox &root) {
     renderer.Clear(Body->computedStyle.backgroundColor);
     Render(root);
+
+    // --- Pick pass ---
+    if (pickTarget) {
+        renderer.PushTarget(pickTarget);
+        renderer.Clear({0, 0, 0, 0});
+        isPickPass = true;
+        Render(root);
+        isPickPass = false;
+        renderer.PopTarget();
+    }
 }
 
 void LayoutRenderer::UpdateDom(Node *dom) {
@@ -38,12 +55,13 @@ void LayoutRenderer::UpdateDom(Node *dom) {
     Body = findBody(Dom);
 }
 
-void LayoutRenderer::Render(const LayoutBox& box) {
+void LayoutRenderer::Render(LayoutBox& box) {
     if (box.node) {
         box.node->renderData.box.x      = box.x;
         box.node->renderData.box.y      = box.y;
         box.node->renderData.box.width  = box.width;
         box.node->renderData.box.height = box.height;
+
     }
 
     switch (box.kind) {
@@ -63,27 +81,27 @@ void LayoutRenderer::Render(const LayoutBox& box) {
             break;
     }
 
-    for (const auto& child : box.children)
+    for (auto& child : box.children)
         Render(child);
 }
 
 
-void LayoutRenderer::RenderBox(const LayoutBox& box) {
+void LayoutRenderer::RenderBox(LayoutBox& box) {
     switch (box.kind) {
         case BoxKind::Block:   RenderBlock(box);   break;
         case BoxKind::Line:    RenderLine(box, box.fontSize); break;
         case BoxKind::TextRun: IsImageBox(box) ? RenderImage(box) : RenderTextRun(box); break;
     }
-    for (const auto& child : box.children)
+    for (auto& child : box.children)
         RenderBox(child);
 }
 
-bool LayoutRenderer::IsImageBox(const LayoutBox& box) {
+bool LayoutRenderer::IsImageBox(LayoutBox& box) {
     return box.node && (box.node->tag == "img" || box.node->tag == "IMG" || box.node->imageData != nullptr);
 }
 
 
-void LayoutRenderer::RenderImage(const LayoutBox& box) const {
+void LayoutRenderer::RenderImage(LayoutBox& box) const {
     if (!box.node) return;
 
     if (box.node->imageData && box.node->imageData->isLoaded && !box.node->imageData->pixels.empty()) {
@@ -110,8 +128,15 @@ void LayoutRenderer::RenderImage(const LayoutBox& box) const {
 }
 
 
-void LayoutRenderer::RenderTextRun(const LayoutBox& box) {
+void LayoutRenderer::RenderTextRun(LayoutBox& box) {
     assert(box.node && box.node->parent);
+    if (isPickPass) {
+        // Text belongs to parent element for hit-testing purposes
+        Color c = AllocPickColor(&box);
+        renderer.FillRect(box.x, box.y, box.width, box.height, c);
+        return;
+    }
+
     const Style& s = box.node->parent ? box.node->parent->computedStyle : box.node->computedStyle;
 
     Font* font = nullptr;
@@ -122,27 +147,38 @@ void LayoutRenderer::RenderTextRun(const LayoutBox& box) {
     int cursorX  = box.x;
     char prev    = 0;
 
-    for (char c : box.text) {
-        if (prev) cursorX += font->GetKerning(c, prev).x >> 6;
-        const Glyph& g = font->GetGlyph(IRenderBackend::GetRenderBackend().get(), c);
+    for (auto c : box.text.chars) {
+        auto kern = font->GetKerning(c.c, prev).x >> 6;
+        if (prev) cursorX += kern;
+        const Glyph& g = font->GetGlyph(IRenderBackend::GetRenderBackend().get(), c.c);
         renderer.DrawGlyph(cursorX + g.bearingX, baseline - g.bearingY, g, color);
+
         cursorX += g.advance;
-        prev = c;
+        prev = c.c;
     }
 }
 
 
-void LayoutRenderer::RenderBlock(const LayoutBox& box) {
+void LayoutRenderer::RenderBlock(LayoutBox& box) {
     if (!box.node) return;
+    if (isPickPass) {
+        Color c = AllocPickColor(&box);
+        // Flat rect — no borders, no radius, no style
+        renderer.FillRect(box.x, box.y, box.width, box.height, c);
+        return;
+    }
+
     const Style& s = box.node->computedStyle;
+
+    int resolved = ResolveFontSizeInherit(box.node, renderer.GetWidth(), renderer.GetHeight());
 
     if (s.hasBackground)
     {
         // Resolve each corner length relative to the element's width (or height)
-        int tl = ResolveLength(s.border_radius_top_left,     static_cast<int>(box.width), renderer.GetWidth(), renderer.GetHeight());
-        int tr = ResolveLength(s.border_radius_top_right,    static_cast<int>(box.width), renderer.GetWidth(), renderer.GetHeight());
-        int br = ResolveLength(s.border_radius_bottom_right, static_cast<int>(box.width), renderer.GetWidth(), renderer.GetHeight());
-        int bl = ResolveLength(s.border_radius_bottom_left,  static_cast<int>(box.width), renderer.GetWidth(), renderer.GetHeight());
+        int tl = ResolveLength(s.border_radius_top_left,     static_cast<int>(box.width), renderer.GetWidth(), renderer.GetHeight(), resolved);
+        int tr = ResolveLength(s.border_radius_top_right,    static_cast<int>(box.width), renderer.GetWidth(), renderer.GetHeight(), resolved);
+        int br = ResolveLength(s.border_radius_bottom_right, static_cast<int>(box.width), renderer.GetWidth(), renderer.GetHeight(), resolved);
+        int bl = ResolveLength(s.border_radius_bottom_left,  static_cast<int>(box.width), renderer.GetWidth(), renderer.GetHeight(), resolved);
 
         renderer.FillRectRounded(
             box.x,
@@ -156,22 +192,22 @@ void LayoutRenderer::RenderBlock(const LayoutBox& box) {
             s.backgroundColor
         );
     }
-    int bLeft   = GetVisibleBorderWidth(s.borderLeft, renderer.GetWidth(), renderer.GetHeight());
-    int bRight  = GetVisibleBorderWidth(s.borderRight, renderer.GetWidth(), renderer.GetHeight());
-    int bTop    = GetVisibleBorderWidth(s.borderTop, renderer.GetWidth(), renderer.GetHeight());
-    int bBottom = GetVisibleBorderWidth(s.borderBottom, renderer.GetWidth(), renderer.GetHeight());
+    int bLeft   = GetVisibleBorderWidth(s.borderLeft, renderer.GetWidth(), renderer.GetHeight(), resolved);
+    int bRight  = GetVisibleBorderWidth(s.borderRight, renderer.GetWidth(), renderer.GetHeight(), resolved);
+    int bTop    = GetVisibleBorderWidth(s.borderTop, renderer.GetWidth(), renderer.GetHeight(), resolved);
+    int bBottom = GetVisibleBorderWidth(s.borderBottom, renderer.GetWidth(), renderer.GetHeight(), resolved);
 
-    if (bTop    > 0) RenderSingleBorderEdge(s.borderTop,    box.x,                      box.x + box.width,      box.y,                          true);
-    if (bBottom > 0) RenderSingleBorderEdge(s.borderBottom, box.x,                      box.x + box.width,      box.y + box.height - bBottom,   true);
-    if (bLeft   > 0) RenderSingleBorderEdge(s.borderLeft,   box.y + bTop,               box.y + box.height - bBottom, box.x,                    false);
-    if (bRight  > 0) RenderSingleBorderEdge(s.borderRight,  box.y + bTop,               box.y + box.height - bBottom, box.x + box.width - bRight, false);
+    if (bTop    > 0) RenderSingleBorderEdge(s.borderTop,    box.x,                      box.x + box.width,      box.y,                          true, resolved);
+    if (bBottom > 0) RenderSingleBorderEdge(s.borderBottom, box.x,                      box.x + box.width,      box.y + box.height - bBottom,   true, resolved);
+    if (bLeft   > 0) RenderSingleBorderEdge(s.borderLeft,   box.y + bTop,               box.y + box.height - bBottom, box.x,                    false, resolved);
+    if (bRight  > 0) RenderSingleBorderEdge(s.borderRight,  box.y + bTop,               box.y + box.height - bBottom, box.x + box.width - bRight, false, resolved);
 }
 
 
-void LayoutRenderer::RenderSingleBorderEdge(const BorderSide& edge, int start, int end, int fixedCoord, bool isHorizontal) {
+void LayoutRenderer::RenderSingleBorderEdge(const BorderSide& edge, int start, int end, int fixedCoord, bool isHorizontal, float fontSize) {
     BorderStyle style = edge.borderStyle;
     Color color       = edge.borderColor;
-    int thickness     = GetVisibleBorderWidth(edge, renderer.GetWidth(), renderer.GetHeight());
+    int thickness     = GetVisibleBorderWidth(edge, renderer.GetWidth(), renderer.GetHeight(), fontSize);
 
     if (style == BorderStyle::None || style == BorderStyle::Hidden || thickness <= 0)
         return;
@@ -218,10 +254,117 @@ void LayoutRenderer::RenderSingleBorderEdge(const BorderSide& edge, int start, i
     }
 }
 
+void LayoutRenderer::RenderLineSelection(
+    LayoutBox& line)
+{
+    if (line.children.empty())
+        return;
 
-void LayoutRenderer::RenderLine(const LayoutBox& box, int textHeight) {
+    struct Rect {
+        int x;
+        int y;
+        int width;
+        int height;
+    };
+
+    std::vector<Rect> rects;
+
+    bool inSelection = false;
+
+    int selStart = 0;
+    int selEnd   = 0;
+
+    int top    = line.y + 1;
+    int height = line.height - 2;
+
+    for (size_t i = 0; i < line.children.size(); i++) {
+
+        LayoutBox& run =
+            line.children[i];
+
+        if (run.kind != BoxKind::TextRun)
+            continue;
+
+        //---------------------------------
+        // Determine if run is selected
+        //---------------------------------
+
+        bool selected = false;
+
+        for (const auto& ch : run.text.chars) {
+            if (ch.highlighted) {
+                selected = true;
+                break;
+            }
+        }
+
+        //---------------------------------
+        // Start selection
+        //---------------------------------
+
+        if (selected) {
+
+            if (!inSelection) {
+                selStart = run.x;
+                selEnd   = run.x + run.width;
+                inSelection = true;
+            } else {
+
+                // extend THROUGH spacing
+                selEnd = run.x + run.width;
+            }
+
+        } else {
+
+            //---------------------------------
+            // flush selection
+            //---------------------------------
+
+            if (inSelection) {
+
+                rects.push_back({
+                    selStart,
+                    top,
+                    selEnd - selStart,
+                    height
+                });
+
+                inSelection = false;
+            }
+        }
+    }
+
+    //---------------------------------
+    // trailing selection
+    //---------------------------------
+
+    if (inSelection) {
+
+        rects.push_back({
+            selStart,
+            top,
+            selEnd - selStart,
+            height
+        });
+    }
+
+    //---------------------------------
+    // render
+    //---------------------------------
+
+    for (const auto& r : rects) {
+
+        renderer.FillRect(
+            r.x,
+            r.y,
+            r.width,
+            r.height,
+            Color(215, 120, 0, 140));
+    }
+}
+void LayoutRenderer::RenderLine(LayoutBox& box, int textHeight) {
     if (box.children.empty()) return;
-
+    RenderLineSelection(box);
     bool underline   = false;
     bool lineThrough = false;
     TextDecorationStyle decorStyle = TextDecorationStyle::Solid;
@@ -231,7 +374,11 @@ void LayoutRenderer::RenderLine(const LayoutBox& box, int textHeight) {
     for (const auto& run : box.children) {
         if (!run.node || !run.node->parent) continue;
         const Style& s = run.node->parent->computedStyle;
-        thickness  = ResolveLength(s.textDecorationThickness, textHeight, renderer.GetWidth(), renderer.GetHeight());
+
+
+
+
+        thickness  = ResolveLength(s.textDecorationThickness, textHeight, renderer.GetWidth(), renderer.GetHeight(), ResolveFontSizeInherit(run.node, renderer.GetWidth(), renderer.GetHeight()));
         decorColor = s.textDecorationColor;
         decorStyle = s.textDecorationStyle;
 
@@ -295,4 +442,150 @@ void LayoutRenderer::RenderDecoration(TextDecorationStyle style, Color color, in
             break;
         }
     }
+}
+
+LayoutBox* LayoutRenderer::HitTest(int x, int y)
+{
+    if (!pickTarget) return nullptr;
+    Color c = renderer.ReadPixel(pickTarget, x, y, true);  // glReadPixels under the hood
+
+    if (c.a == 0) return nullptr;
+    auto it = pickMap.find(DecodePickID(c));
+    return it != pickMap.end() ? it->second : nullptr;
+}
+
+LayoutBox* FindTextRunAtPoint(
+    LayoutBox& box,
+    int x,
+    int y)
+{
+    if (box.kind == BoxKind::TextRun) {
+
+        bool inside =
+            x >= box.x &&
+            x < box.x + box.width &&
+            y >= box.y &&
+            y < box.y + box.height;
+
+        if (inside)
+            return &box;
+    }
+
+    for (LayoutBox& child : box.children) {
+
+        if (auto* r =
+            FindTextRunAtPoint(child, x, y))
+        {
+            return r;
+        }
+    }
+
+    return nullptr;
+}
+int LayoutRenderer::GetCharacterOffsetAtX(
+    LayoutBox& run,
+    int mouseX)
+{
+    if (run.text.chars.empty())
+        return 0;
+
+    const Style& s =
+        run.node->parent
+            ? run.node->parent->computedStyle
+            : run.node->computedStyle;
+
+    Font* font = nullptr;
+
+    FontMetrics m =
+        FontManager::PrepareFontContext(
+            s,
+            run.fontSize,
+            font,
+            renderer.GetWidth(),
+            renderer.GetHeight());
+
+    int cursorX = run.x;
+    char prev = 0;
+
+    for (size_t i = 0; i < run.text.chars.size(); i++) {
+
+        const auto& c =
+            run.text.chars[i];
+
+        auto kern =
+            font->GetKerning(c.c, prev).x >> 6;
+
+        if (prev)
+            cursorX += kern;
+
+        const Glyph& g =
+            font->GetGlyph(
+                IRenderBackend::GetRenderBackend().get(),
+                c.c);
+
+        //---------------------------------
+        // glyph bounds
+        //---------------------------------
+
+        int glyphLeft =
+            cursorX;
+
+        int glyphRight =
+            cursorX + g.advance;
+
+        //---------------------------------
+        // midpoint hit test
+        //---------------------------------
+
+        int midpoint =
+            (glyphLeft + glyphRight) / 2;
+
+        if (mouseX < midpoint)
+            return static_cast<int>(i);
+
+        cursorX += g.advance;
+        prev = c.c;
+    }
+
+    //---------------------------------
+    // after final char
+    //---------------------------------
+
+    return static_cast<int>(
+        run.text.chars.size());
+}
+TextHitResult LayoutRenderer::HitTestTextPosition(
+    LayoutBox& root,
+    int mouseX,
+    int mouseY)
+{
+    auto* run =
+        FindTextRunAtPoint(
+            root,
+            mouseX,
+            mouseY);
+
+    if (!run)
+        return {};
+
+    int offset =
+        GetCharacterOffsetAtX(
+            *run,
+            mouseX);
+
+    return {
+        run,
+        offset,
+        true
+    };
+}
+
+Color LayoutRenderer::AllocPickColor(LayoutBox* node) {
+    // Check if already assigned
+    for (auto& [id, n] : pickMap)
+        if (n == node) return EncodePickID(id);
+
+    uint32_t id = nextPickID++;
+    pickMap[id] = node;
+    return EncodePickID(id);
 }

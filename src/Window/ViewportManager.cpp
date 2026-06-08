@@ -91,6 +91,36 @@ ViewportManager::ViewportManager(const int width, const int height, JavaScriptEn
 ViewportManager::~ViewportManager() {
     engine.destroy_tab_context(tabContext);
 }
+
+void ViewportManager::MoveMouse(int x, int y)
+{
+    if (!IO.is_dragging && IO.Mouse_clicked)
+    {
+        IO.mouse_drag_x = x;
+        IO.mouse_drag_y = y;
+        IO.is_dragging = true;
+    }
+
+    IO.mouse_x = x;
+    IO.mouse_y = y;
+}
+
+void ViewportManager::SetMouseClicked(bool clicked)
+{
+IO.Mouse_clicked = clicked;
+
+if (!IO.Mouse_clicked)
+{
+    IO.is_dragging = false;
+    IO.dragged = true;
+}
+}
+
+LayoutBox* ViewportManager::HitTest(int x, int y)
+{
+    return layoutRenderer.HitTest(x, y);
+}
+
 void ViewportManager::FindTitle() {
     if (auto title_node = Parser::FindNodeByTag(&dom, "title")) { // get title
         for (auto &c : title_node->children) {
@@ -177,6 +207,7 @@ void ViewportManager::Update() {
         FindTitle();
         FixParentPointers(dom);
         layout.Update(dom);
+
     }
 }
 
@@ -191,9 +222,151 @@ void ViewportManager::Step() {
     // ReSharper disable once CppExpressionWithoutSideEffects
     engine.Step();
 }
-void ViewportManager::Render() {
+void ViewportManager::Render()
+{
+    auto& root = layout.GetRoot();
 
-    layoutRenderer.RenderRoot(layout.GetRoot());
+    //-----------------------------------------
+    // Text selection during drag
+    //-----------------------------------------
+
+    if (IO.is_dragging)
+    {
+        auto start =
+            layoutRenderer.HitTestTextPosition(
+                root,
+                IO.mouse_drag_x,
+                IO.mouse_drag_y);
+
+        auto end =
+            layoutRenderer.HitTestTextPosition(
+                root,
+                IO.mouse_x,
+                IO.mouse_y);
+
+        //---------------------------------
+        // Clear previous highlighting
+        //---------------------------------
+
+        std::function<void(LayoutBox&)> clearSelection =
+            [&](LayoutBox& box)
+        {
+            if (box.kind == BoxKind::TextRun)
+            {
+                for (auto& c : box.text.chars)
+                    c.highlighted = false;
+            }
+
+            for (auto& child : box.children)
+                clearSelection(child);
+        };
+
+        clearSelection(root);
+
+        //---------------------------------
+        // Invalid hit guard
+        //---------------------------------
+
+        if (start.valid && end.valid)
+        {
+            bool passedStart = false;
+            bool finished    = false;
+
+            LayoutBox* startBox = start.box;
+            LayoutBox* endBox   = end.box;
+
+            int startOffset = start.offset;
+            int endOffset   = end.offset;
+
+            //---------------------------------
+            // Apply highlighting
+            //---------------------------------
+
+            std::function<void(LayoutBox&)> applySelection =
+                [&](LayoutBox& box)
+            {
+                if (finished)
+                    return;
+
+                if (box.kind == BoxKind::TextRun)
+                {
+                    bool isStart =
+                        (&box == startBox);
+
+                    bool isEnd =
+                        (&box == endBox);
+
+                    //---------------------------------
+                    // begin selection
+                    //---------------------------------
+
+                    if (isStart)
+                        passedStart = true;
+
+                    //---------------------------------
+                    // highlight chars
+                    //---------------------------------
+
+                    if (passedStart)
+                    {
+                        auto& chars =
+                            box.text.chars;
+
+                        for (size_t i = 0;
+                             i < chars.size();
+                             i++)
+                        {
+                            bool selected = true;
+
+                            //---------------------------------
+                            // trim left edge
+                            //---------------------------------
+
+                            if (isStart &&
+                                static_cast<int>(i) < startOffset)
+                            {
+                                selected = false;
+                            }
+
+                            //---------------------------------
+                            // trim right edge
+                            //---------------------------------
+
+                            if (isEnd &&
+                                static_cast<int>(i) >= endOffset)
+                            {
+                                selected = false;
+                            }
+
+                            chars[i].highlighted =
+                                selected;
+                        }
+                    }
+
+                    //---------------------------------
+                    // finish selection
+                    //---------------------------------
+
+                    if (isEnd)
+                    {
+                        finished = true;
+                        return;
+                    }
+                }
+
+                for (auto& child : box.children)
+                    applySelection(child);
+            };
+
+            applySelection(root);
+        }
+    }
+
+    //-----------------------------------------
+    // Render final frame
+    //-----------------------------------------
+
+    layoutRenderer.RenderRoot(root);
 }
 // Assumes 'cache' is passed by reference or pointer from your ViewportManager context
 void LoadImageResourceSync(Node& imgNode, const std::string& absoluteUrl, BrowserCacheManager& cache, int layoutWidth = 0 /* only for svg's */, int layoutHeight = 0) {

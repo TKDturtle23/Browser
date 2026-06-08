@@ -431,9 +431,9 @@ static std::optional<Color> ParseColor(std::string_view s) {
 
         if (s.size() == 7) {
             return Color(
-                hex2(s[1], s[2]),
+                hex2(s[5], s[6]),
                 hex2(s[3], s[4]),
-                hex2(s[5], s[6])
+                hex2(s[1], s[2])
             );
         }
     }

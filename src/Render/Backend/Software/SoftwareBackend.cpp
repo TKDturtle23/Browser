@@ -4,6 +4,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <ranges>
 
 #include "Platform/Platform.h"
 #include "Platform/Platform_Win32.h"
@@ -22,7 +23,8 @@ WindowID SoftwareBackend::RegisterWindow(Platform* context
 
 RenderTargetID SoftwareBackend::CreateRenderTarget(
     int width,
-    int height
+    int height,
+        bool blend
 ) {
     const RenderTargetID id = nextTargetID++;
 
@@ -38,6 +40,17 @@ RenderTargetID SoftwareBackend::CreateRenderTarget(
 
     return id;
 }
+
+Color SoftwareBackend::ReadPixel(RenderTargetID target, int x, int y, bool front)
+{
+    if (front)
+    {
+        return renderTargets[target].frontBuffer[y * renderTargets[target].width + x];
+    }
+return renderTargets[target].backBuffer[y * renderTargets[target].width + x];
+}
+
+
 
 void SoftwareBackend::AttachRenderTarget(
     WindowID window,

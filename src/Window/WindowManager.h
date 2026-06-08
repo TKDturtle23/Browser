@@ -61,7 +61,7 @@ private:
     UI_Image reload;
     UI_Image forward;
     UI_Image back;
-
+    int mouse_x, mouse_y;
     UI_Image plus;
 
     Font fallbackFont;

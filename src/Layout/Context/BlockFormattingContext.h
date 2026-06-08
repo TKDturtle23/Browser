@@ -13,7 +13,7 @@ struct BlockResult {
     // this into its prevMarginBottom so it collapses correctly with the next
     // sibling's margin-top (CSS §8.3.1 parent-child margin collapsing).
     // Zero when the box has an explicit height, a bottom border, or padding.
-    int escapedMarginBottom = 0;
+    double escapedMarginBottom = 0;
 };
 
 

@@ -223,9 +223,23 @@ void WindowManager::Run() {
                         ui_manager->InjectMouseButton(false);
                     if (event.type == EventType::MouseMove) {
                         ui_manager->InjectMouseMove(event.x, event.y);
+                        mouse_x = event.x;
+                        mouse_y = event.y;
                     }
                 } else {
-                    // tabs[activeTabIndex].manager->InjectMouse(...);
+                    if (event.type == EventType::MouseMove)
+                    {
+                        if (mouse_y > TOP_WIDTH)
+                        {
+                            tabs[activeTabIndex].manager->MoveMouse(event.x, event.y);
+                        }
+                        mouse_x = event.x;
+                        mouse_y = event.y - TOP_WIDTH;
+                    }
+                    if (event.type == EventType::MouseButtonPress  && event.button == 1)
+                        tabs[activeTabIndex].manager->SetMouseClicked(true);
+                    if (event.type == EventType::MouseButtonRelease && event.button == 1)
+                        tabs[activeTabIndex].manager->SetMouseClicked(false);
                 }
                 platform->needsRedraw = true;
             }
@@ -239,6 +253,7 @@ void WindowManager::Run() {
                 debugWindow->HandleEvent(debugEvent);
             }
         }
+
         bool shouldRender =
             platform->needsRedraw ||
             polledAnyEvent ||
@@ -250,14 +265,14 @@ void WindowManager::Run() {
 
         if (shouldRender) {
             OnRender();
+
+
             platform->needsRedraw = false;
         }
-
         std::this_thread::sleep_for(
             std::chrono::milliseconds(8)
         );
 
-        std::this_thread::sleep_for(std::chrono::milliseconds(8));
     }
 }
 

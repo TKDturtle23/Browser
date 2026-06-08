@@ -48,7 +48,16 @@ int BlockFormattingContext::Layout(Node &node, LayoutBox &parent, int contentX, 
             }
         } else {
             const auto& s = child.computedStyle;
-            int marginTop = ResolveLength(s.margin_top, contentWidth, lr_.GetWidth(), lr_.GetHeight());
+
+            int resolved = ResolveFontSizeInherit(&child, lr_.GetWidth(), lr_.GetHeight());
+
+            int marginTop = ResolveLength(
+                s.margin_top,
+                contentWidth,
+                lr_.GetWidth(),
+                lr_.GetHeight(),
+                resolved
+            );
 
             // Collapse the previous block's bottom margin with this block's top margin.
             // Also fold in any margin that escaped upward out of the previous child

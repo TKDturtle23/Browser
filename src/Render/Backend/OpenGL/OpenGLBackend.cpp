@@ -348,12 +348,14 @@ WindowID OpenGLBackend::RegisterWindow(Platform* platform) {
     return id;
 }
 
-RenderTargetID OpenGLBackend::CreateRenderTarget(int width, int height) {
+RenderTargetID OpenGLBackend::CreateRenderTarget(int width, int height,
+        bool blend ) {
     const RenderTargetID id = nextTargetID++;
 
     OpenGLRenderTarget target{};
     target.width = width;
     target.height = height;
+    target.blend = blend;
 
     glCreateTextures(GL_TEXTURE_2D, 1, &target.colorTexture);
     glTextureStorage2D(target.colorTexture, 1, GL_RGBA8, width, height);
@@ -464,13 +466,45 @@ void OpenGLBackend::EndFrame() {
         const auto& target = targetIt->second;
         glBindFramebuffer(GL_FRAMEBUFFER, target.fbo);
         glViewport(0, 0, target.width, target.height);
-
+        if (target.blend) {
+            glEnable(GL_BLEND);
+            glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+        } else {
+            glDisable(GL_BLEND);
+        }
         ExecuteCommand(cmd);
     }
 
     // Final clean out flush pass for the remaining commands in the buffer
     FlushBatch();
     commandBuffer.clear();
+}
+Color OpenGLBackend::ReadPixel(RenderTargetID target, int x, int y, bool front) {
+    int flippedY;
+    uint8_t pixel[4];
+
+    if (target == 0) {
+        // Default framebuffer — front/back distinction applies here
+        glBindFramebuffer(GL_READ_FRAMEBUFFER, 0);
+        glReadBuffer(front ? GL_FRONT : GL_BACK);
+
+        // Need window height for Y flip — grab from viewport or store it
+        GLint vp[4];
+        glGetIntegerv(GL_VIEWPORT, vp);
+        flippedY = vp[3] - 1 - y;
+    } else {
+        // FBO — no front/back, always reads from attached color texture
+        // front parameter is meaningless here, silently ignore it
+        auto it = renderTargets.find(target);
+        if (it == renderTargets.end()) return {};
+
+        glBindFramebuffer(GL_READ_FRAMEBUFFER, it->second.fbo);
+        glReadBuffer(GL_COLOR_ATTACHMENT0);
+        flippedY = it->second.height - 1 - y;
+    }
+
+    glReadPixels(x, flippedY, 1, 1, GL_RGBA, GL_UNSIGNED_BYTE, pixel);
+    return { pixel[0], pixel[1], pixel[2], pixel[3] };
 }
 void OpenGLBackend::ExecuteCommand(const RenderCommand& cmd) {
     switch (cmd.type) {
