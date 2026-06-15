@@ -31,6 +31,13 @@ struct FontMetrics {
     int lineGap = 0;
     int lineHeight = 0;
 };
+#include <string>
+#include <string_view>
+#include <stdexcept>
+#include <cstdint>
+
+std::u32string Utf8ToUtf32(std::string_view input);
+
 class Font {
 public:
     Font(const std::string& path, int pixelSize);
@@ -38,26 +45,33 @@ public:
 
 
 
-    const Glyph& GetGlyph(IRenderBackend* backend, char c) const;
+    const Glyph& GetGlyph(IRenderBackend* backend, char32_t c) const;
     int GetLineHeight() const;
-    FT_Vector GetKerning(char c, char prev_char) const;
+    FT_Vector GetKerning(char32_t c, char32_t prev_char) const;
 
     FontMetrics GetMetrics() const; // REQUIRED
     void SetSize(IRenderBackend* backend, int pixelSize);
     int GetCurrentSize() const { return currentSize; }
+
+    bool HasSymbol(char32_t c) const;
 
 private:
     int currentSize;
     FT_Library ft;
     FT_Face face;
 
-    mutable std::unordered_map<char, Glyph> cache;
+    mutable std::unordered_map<char32_t, Glyph> cache;
 
     mutable uint32_t fontTextureID = 0; // The generic abstract ID token!
     mutable int atlasX = 0;
     mutable int atlasY = 0;
     mutable int maxRowHeight = 0;
     const int ATLAS_SIZE = 512;
-    void LoadGlyph(IRenderBackend* backend, char c) const;
+    void LoadGlyph(IRenderBackend* backend, char32_t c) const;
 
+};
+struct FallbackFonts {
+    Font& Primary;
+    Font& Symbol;
+    Font& Emoji;
 };

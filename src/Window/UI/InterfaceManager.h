@@ -7,7 +7,7 @@
 #include <stack>
 #include "Platform/Platform.h"   // Color, Key, Font, Renderer, etc.
 #include "Text/Font.h"
-#include "Node.h"
+#include "../../Node/Node.h"
 // ---------------------------------------------------------------------------
 // Forward declarations
 // ---------------------------------------------------------------------------
@@ -53,54 +53,54 @@ struct WidgetResult {
 // ---------------------------------------------------------------------------
 struct UIStyleColors {
     // Window / panel
-    Color WindowBg        = {32, 24, 48, 255};
-    Color WindowBorder    = {92, 72, 120, 255};
+    Color WindowBg         = {48, 24, 32, 255};
+    Color WindowBorder     = {120, 72, 92, 255};
 
     // Widgets – shared
-    Color Text            = {245, 235, 255, 255};
-    Color TextDisabled    = {170, 150, 190, 255};
+    Color Text             = {255, 235, 245, 255};
+    Color TextDisabled     = {190, 150, 170, 255};
 
     // Button
-    Color ButtonNormal    = {120, 82, 168, 255};
-    Color ButtonHover     = {148, 104, 196, 255};
-    Color ButtonActive    = {176, 126, 220, 255};
-    Color ButtonText      = {255, 245, 255, 255};
+    Color ButtonNormal     = {168, 82, 120, 255};
+    Color ButtonHover      = {196, 104, 148, 255};
+    Color ButtonActive     = {220, 126, 176, 255};
+    Color ButtonText       = {255, 245, 255, 255};
 
     // Input (TextField / AddressBar)
-    Color InputBg         = {48, 36, 68, 255};
-    Color InputBorderIdle = {118, 92, 156, 255};
-    Color InputBorderFocus= {220, 120, 255, 255};
-    Color InputText       = {250, 240, 255, 255};
-    Color InputSelection  = {210, 120, 255, 160};
-    Color InputSelText    = {255, 255, 255, 255};
-    Color InputCursor     = {255, 180, 255, 255};
-    Color InputFocused    = {62, 46, 84, 255};
+    Color InputBg          = {68, 36, 48, 255};
+    Color InputBorderIdle  = {156, 92, 118, 255};
+    Color InputBorderFocus = {255, 120, 220, 255};
+    Color InputText        = {255, 240, 250, 255};
+    Color InputSelection   = {255, 120, 210, 160};
+    Color InputSelText     = {255, 255, 255, 255};
+    Color InputCursor      = {255, 180, 255, 255};
+    Color InputFocused     = {84, 46, 62, 255};
 
     // Checkbox
-    Color CheckboxIdle    = {100, 76, 132, 255};
-    Color CheckboxChecked = {214, 92, 255, 255};
-    Color CheckboxMark    = {255, 255, 255, 255};
+    Color CheckboxIdle     = {132, 76, 100, 255};
+    Color CheckboxChecked  = {255, 92, 214, 255};
+    Color CheckboxMark     = {255, 255, 255, 255};
 
     // Tab
-    Color TabIdle         = {70, 52, 96, 255};
-    Color TabHover        = {108, 76, 144, 255};
-    Color TabActive       = {148, 104, 196, 255};
-    Color TabAccent       = {255, 120, 220, 255};
-    Color TabText         = {250, 235, 255, 255};
+    Color TabIdle          = {96, 52, 70, 255};
+    Color TabHover         = {144, 76, 108, 255};
+    Color TabActive        = {196, 104, 148, 255};
+    Color TabAccent        = {220, 120, 255, 255};
+    Color TabText          = {255, 235, 250, 255};
 
     // List
-    Color ListBg          = {38, 28, 56, 255};
-    Color ListRowEven     = {44, 32, 64, 255};
-    Color ListRowOdd      = {52, 38, 74, 255};
-    Color ListRowHover    = {180, 110, 255, 90};
-    Color ListRowSelected = {214, 92, 255, 255};
-    Color ListBorder      = {100, 80, 132, 255};
-    Color ListScrollTrack = {60, 46, 84, 255};
-    Color ListScrollThumb = {164, 110, 210, 255};
-    Color ListArrow       = {230, 180, 255, 255};
+    Color ListBg           = {56, 28, 38, 255};
+    Color ListRowEven      = {64, 32, 44, 255};
+    Color ListRowOdd       = {74, 38, 52, 255};
+    Color ListRowHover     = {255, 110, 180, 90};
+    Color ListRowSelected  = {255, 92, 214, 255};
+    Color ListBorder       = {132, 80, 100, 255};
+    Color ListScrollTrack  = {84, 46, 60, 255};
+    Color ListScrollThumb  = {210, 110, 164, 255};
+    Color ListArrow        = {255, 180, 230, 255};
 
     // Separator
-    Color Separator       = {118, 92, 156, 255};
+    Color Separator        = {156, 92, 118, 255};
 };
 
 struct UIStyleVars {

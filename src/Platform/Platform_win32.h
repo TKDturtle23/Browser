@@ -35,7 +35,7 @@ public:
 
     bool IsRunning() const override;
     void SetMinimumSize(int width, int height) override;
-
+    void SetCursorType(CursorType type) override;
     void MinimizeWindow() override;
 
     void MaximizeOrRestoreWindow() override;

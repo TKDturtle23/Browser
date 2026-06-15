@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>No Internet Connection</title>
+
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-family: "Segoe UI", sans-serif;
+            background: #1e1e2f;
+            color: white;
+            overflow: hidden;
+        }
+
+        .container {
+            text-align: center;
+            background: rgba(255, 255, 255, 0.08);
+            backdrop-filter: blur(12px);
+            padding: 50px 40px;
+            border-radius: 24px;
+            width: 90%;
+            max-width: 500px;
+            box-shadow:
+                    0 10px 30px rgba(0, 0, 0, 0.35),
+                    inset 0 1px 0 rgba(255,255,255,0.1);
+            animation: fadeIn 0.7s ease;
+        }
+
+        .icon {
+            font-size: 5rem;
+            margin-bottom: 20px;
+            animation: float 3s ease-in-out infinite;
+        }
+
+        h1 {
+            font-size: 2.4rem;
+            margin-bottom: 15px;
+            font-weight: 700;
+        }
+
+        p {
+            font-size: 1.1rem;
+            color: #d6d6e7;
+            line-height: 1.6;
+            margin-bottom: 30px;
+        }
+
+        button {
+            background: #6c63ff;
+            border: none;
+            color: white;
+            padding: 14px 28px;
+            font-size: 1rem;
+            border-radius: 12px;
+            cursor: pointer;
+            transition: 0.25s ease;
+            font-weight: 600;
+        }
+
+        button:hover {
+            background: #7d75ff;
+            transform: translateY(-2px);
+        }
+
+        button:active {
+            transform: scale(0.98);
+        }
+
+        .hint {
+            margin-top: 18px;
+            font-size: 0.9rem;
+            color: #9ea0c3;
+        }
+
+        @keyframes fadeIn {
+            from {
+                opacity: 0;
+                transform: translateY(15px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        @keyframes float {
+            0%, 100% {
+                transform: translateY(0px);
+            }
+            50% {
+                transform: translateY(-8px);
+            }
+        }
+    </style>
+</head>
+
+<body>
+
+<div class="container">
+    <div class="icon">📡</div>
+
+    <h1>No Internet</h1>
+
+    <p>
+        Your browser couldn’t connect to the webpage.<br>
+        Check your internet connection and try again.
+    </p>
+
+    <button onclick="location.reload()">
+        Retry
+    </button>
+
+    <div class="hint">
+        ERR_CONNECTION_FAILED
+    </div>
+</div>
+
+</body>
+</html>

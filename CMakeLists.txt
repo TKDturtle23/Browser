@@ -1,9 +1,7 @@
 cmake_minimum_required(VERSION 3.20) # Rolled back to 3.20+ for broader compatibility, adjust if 3.24+ features are required
 
 project(Browser LANGUAGES C CXX)
-if(MINGW)
-    set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -static -static-libgcc -static-libstdc++")
-endif()
+
 # -------------------------------------------------------------------
 # 1. Global Project & Compiler Configurations
 # -------------------------------------------------------------------
@@ -39,9 +37,9 @@ add_subdirectory(submodules/quickjs)
 # -------------------------------------------------------------------
 add_executable(Browser
         src/main.cpp
-        src/BrowserCacheManager.cpp
-        src/CurlGrabber.h
-        src/CurlGrabber.cpp
+        src/Curl/BrowserCacheManager.cpp
+        src/Curl/CurlGrabber.h
+        src/Curl/CurlGrabber.cpp
         src/Tokenizer.cpp
         src/Parser.h
         src/Parser.cpp
@@ -61,7 +59,7 @@ add_executable(Browser
         src/JavaScriptEngine/QuickjsEngine.cpp
         src/JavaScriptEngine/JS_Functions.cpp
         src/NodeToHTML.cpp
-        src/Window/Debugwindowmanager.cpp
+        src/Window/Debug/Debugwindowmanager.cpp
         src/Debug/Logger.cpp
         src/Debug/Timer.cpp
         src/Layout/WordCollector.cpp
@@ -85,7 +83,18 @@ add_executable(Browser
         src/Render/Backend/OpenGL/Platform/Win32GLContext.cpp
         src/Render/Backend/OpenGL/Platform/Win32GLContext.h
         src/Render/Backend/OpenGL/Platform/IGLContext.cpp
-        src/Render/Backend/OpenGL/Platform/IGLContext.cpp
+        src/Curl/UrlUtils.cpp
+        src/Text/TextSelector.cpp
+        src/Window/Debug/DebugOverlayRenderer.cpp
+        src/Window/Debug/DebugOverlayRenderer.h
+        src/Platform/EventDispatcher.cpp
+        src/Platform/EventDispatcher.h
+        src/Layout/Context/FlexFormattingContext.cpp
+        src/Layout/Context/FlexFormattingContext.h
+        src/Node/Flex.h
+        src/Node/CSSLength.h
+        src/CSS/CSSColor.h
+        src/CSS/CSSColor.cpp
 )
 
 # Target Include Directories

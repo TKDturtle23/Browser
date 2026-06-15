@@ -10,7 +10,7 @@
 #include <string>
 #include <vector>
 
-#include "Node.h"
+#include "../Node/Node.h"
 #include "quickjs.h"
 
 struct MockHTMLElement;

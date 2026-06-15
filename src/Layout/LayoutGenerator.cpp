@@ -11,6 +11,7 @@
 #include "LayoutHelper.h"
 #include "WordCollector.h"
 #include "Context/BlockFormattingContext.h"
+#include "Context/FlexFormattingContext.h"
 #define ResolveFromWindow(length, baseWidth, inheritedFontSize) ResolveLength(length, baseWidth, renderer.GetWidth(), renderer.GetHeight(), inheritedFontSize)
 
 
@@ -49,7 +50,7 @@ BoxEdges LayoutGenerator::ResolveMargins(const Style& s, int containerWidth, int
     };
 }
 
-void LayoutGenerator::ApplyMarginCentering(const Style& s, BoxEdges& margin, int containerWidth, int boxWidth) const {
+void LayoutGenerator::ApplyMarginCentering(const Style& s, BoxEdges& margin, int containerWidth, int boxWidth) {
     int remaining = containerWidth - boxWidth;
     if (remaining <= 0) return;
 
@@ -65,107 +66,349 @@ void LayoutGenerator::ApplyMarginCentering(const Style& s, BoxEdges& margin, int
         margin.right = remaining - margin.left;
     }
 }
-
-BlockResult LayoutGenerator::LayoutBlock(Node& node, int containerX, int containerY, int containerWidth, int containerHeight) {
+LayoutResult LayoutGenerator::LayoutNode(
+    Node& node,
+    int containerX,
+    int containerY,
+    int containerWidth,
+    int containerHeight)
+{
     const Style& s = node.computedStyle;
-    int InheritedFontSize = ResolveFontSizeInherit(&node, renderer.GetWidth(), renderer.GetHeight());
-    // 1. Resolve Box Model Geometry
-    BoxEdges padding = ResolvePadding(s, containerWidth, InheritedFontSize);
-    BoxEdges border  = ResolveBorders(s, InheritedFontSize);
-    BoxEdges margin  = ResolveMargins(s, containerWidth, InheritedFontSize);
 
-    // 2. Resolve Core Width
-    bool hasExplicitWidth = (s.width.unit != LengthUnit::Auto);
+    switch (s.display)
+    {
+        case DisplayType::Flex:
+            return LayoutFlex(
+                node,
+                containerX,
+                containerY,
+                containerWidth,
+                containerHeight);
+
+        case DisplayType::Grid:
+            std::cout << "Grid not yet implemented, defaulting to block" << std::endl;
+        case DisplayType::Block:
+        case DisplayType::Inline:
+        default:
+            return LayoutBlock(
+                node,
+                containerX,
+                containerY,
+                containerWidth,
+                containerHeight);
+    }
+}
+LayoutResult LayoutGenerator::LayoutFlex(
+    Node& node,
+    int containerX,
+    int containerY,
+    int containerWidth,
+    int containerHeight)
+{
+    const Style& s = node.computedStyle;
+
+    int inheritedFontSize =
+        ResolveFontSizeInherit(&node, renderer.GetWidth(), renderer.GetHeight());
+
+    // ─────────────────────────────────────────────────────────────
+    // Resolve box model
+    // ─────────────────────────────────────────────────────────────
+
+    BoxEdges padding = ResolvePadding(s, containerWidth, inheritedFontSize);
+    BoxEdges border  = ResolveBorders(s, inheritedFontSize);
+    BoxEdges margin  = ResolveMargins(s, containerWidth, inheritedFontSize);
+
     LayoutBox box;
     box.kind = BoxKind::Block;
     box.node = &node;
 
-    if (hasExplicitWidth) {
-        int computedContent = ResolveFromWindow(s.width, containerWidth, InheritedFontSize);
-        box.width = (s.boxSizing == BoxSizing::ContentBox)
-                    ? computedContent + padding.Horizontal() + border.Horizontal()
-                    : computedContent;
+    // Width
+    if (s.width.unit != LengthUnit::Auto) {
+        int computed =
+            ResolveFromWindow(s.width, containerWidth, inheritedFontSize);
+
+        box.width =
+            (s.boxSizing == BoxSizing::ContentBox)
+                ? computed + padding.Horizontal() + border.Horizontal()
+                : computed;
     } else {
         box.width = containerWidth;
     }
 
-    // 3. Position Box & Form Content Bounds
     ApplyMarginCentering(s, margin, containerWidth, box.width);
+
     box.x = containerX + margin.left;
     box.y = containerY;
 
-    int contentX      = box.x + border.left + padding.left;
-    int contentY      = box.y + border.top  + padding.top;
-    int contentWidth  = std::max(0, static_cast<int>(box.width - padding.Horizontal() - border.Horizontal()));
-    int contentHeight = std::max(0, static_cast<int>(containerHeight - padding.Vertical() - border.Vertical()));
+    int contentX =
+        box.x + border.left + padding.left;
 
-    // 4. Layout Children via BFC
+    int contentY =
+        box.y + border.top + padding.top;
+
+    int contentWidth =
+        std::max(0.0, box.width - padding.Horizontal() - border.Horizontal());
+
+    int contentHeight =
+        std::max(0.0, containerHeight - padding.Vertical() - border.Vertical());
+
+    // ─────────────────────────────────────────────────────────────
+    // Flex formatting context
+    // ─────────────────────────────────────────────────────────────
+
+    FlexFormattingContext ffc(*this);
+
+    int endMain =
+        ffc.Layout(
+            node,
+            box,
+            contentX,
+            contentY,
+            contentWidth,
+            contentHeight);
+
+    // ─────────────────────────────────────────────────────────────
+    // Resolve height
+    //
+    // endMain is an absolute Y (contentY + accumulated cursor).
+    // For column: (endMain - contentY) is the content block height.
+    // For row:    height is driven by the tallest child (maxCross),
+    //             read back from the children already pushed into box.
+    // ─────────────────────────────────────────────────────────────
+
+    bool isRow = (s.flex.direction == FlexDirection::Row);
+    std::cout << "LayoutFlex: containerHeight=" << containerHeight
+              << " contentHeight=" << contentHeight
+              << " availableCross=" << (isRow ? contentHeight : contentWidth)
+              << " node=" << node.tag << std::endl;
+    if (s.height.unit != LengthUnit::Auto)
+    {
+        int computed =
+            ResolveFromWindow(s.height, containerHeight, inheritedFontSize);
+
+        box.height =
+            (s.boxSizing == BoxSizing::ContentBox)
+                ? computed + padding.Vertical() + border.Vertical()
+                : computed;
+    }
+    else if (isRow)
+    {
+        // Row flex: height = tallest child bottom edge, measured from box.y.
+        int maxBottom = contentY;
+
+        for (const auto& child : box.children)
+            maxBottom = std::max(maxBottom, child.y + child.height);
+
+        box.height =
+            (maxBottom - box.y)
+            + border.bottom
+            + padding.bottom;
+    }
+    else
+    {
+        // Column flex: endMain is absolute, so subtract contentY to get
+        // the content block height, then add padding + border.
+        // Note: do NOT also add padding.top / border.top — those are
+        // already encoded in the offset between box.y and contentY.
+        int contentBlockHeight = endMain - contentY;
+
+        box.height =
+            contentBlockHeight
+            + padding.Vertical()
+            + border.Vertical();
+    }
+
+    // ─────────────────────────────────────────────────────────────
+    // Min/max clamps
+    // ─────────────────────────────────────────────────────────────
+
+    if (s.max_height.unit != LengthUnit::Auto)
+    {
+        box.height =
+            std::min(
+                box.height,
+                (int)ResolveFromWindow(s.max_height, 0, inheritedFontSize));
+    }
+
+    if (s.min_height.unit != LengthUnit::Auto)
+    {
+        box.height =
+            std::max(
+                box.height,
+                (int)ResolveFromWindow(s.min_height, 0, inheritedFontSize));
+    }
+
+    // ─────────────────────────────────────────────────────────────
+    // Render debug data
+    // ─────────────────────────────────────────────────────────────
+
+    auto& rd = box.node->renderData;
+
+    rd.box = {
+        (float)box.x,
+        (float)box.y,
+        (float)box.width,
+        (float)box.height
+    };
+
+    rd.resolved_margin_top    = margin.top;
+    rd.resolved_margin_right  = margin.right;
+    rd.resolved_margin_bottom = margin.bottom;
+    rd.resolved_margin_left   = margin.left;
+
+    rd.resolved_padding_top    = padding.top;
+    rd.resolved_padding_right  = padding.right;
+    rd.resolved_padding_bottom = padding.bottom;
+    rd.resolved_padding_left   = padding.left;
+
+    // Flex containers establish a new formatting context.
+    // Margins do not collapse through flex containers.
+    return {
+        std::move(box),
+        0
+    };
+}
+LayoutResult LayoutGenerator::LayoutBlock(Node& node, int containerX, int containerY, int containerWidth, int containerHeight) {
+    const Style& s = node.computedStyle;
+    int inheritedFontSize = ResolveFontSizeInherit(&node, renderer.GetWidth(), renderer.GetHeight());
+
+    // 1. Resolve Box Model Geometry
+    BoxEdges padding = ResolvePadding(s, containerWidth, inheritedFontSize);
+    BoxEdges border  = ResolveBorders(s, inheritedFontSize);
+    BoxEdges margin  = ResolveMargins(s, containerWidth, inheritedFontSize);
+
+    bool hasExplicitWidth = (s.width.unit != LengthUnit::Auto);
+    bool shrinkToFit = (node.tag == "span" || node.tag == "button" ||
+                        s.display == DisplayType::Inline || s.display == DisplayType::InlineBlock);
+
+    LayoutBox box;
+    box.kind = BoxKind::Block;
+    box.node = &node;
+
+    // STEP 1: Core Width Resolution
+    if (hasExplicitWidth) {
+        int computedContent = ResolveFromWindow(s.width, containerWidth, inheritedFontSize);
+        box.width = (s.boxSizing == BoxSizing::ContentBox)
+            ? computedContent + padding.Horizontal() + border.Horizontal()
+            : computedContent;
+    } else if (shrinkToFit) {
+        box.width = 0; // Handled dynamically post-BFC pass or via intrinsic pass
+    } else {
+        box.width = containerWidth;
+    }
+
+    // 2. Center/Position Box (Only if width is already known)
+    if (!shrinkToFit || hasExplicitWidth) {
+        ApplyMarginCentering(s, margin, containerWidth, box.width);
+        box.x = containerX + margin.left;
+    } else {
+        // Temporary assignment for content positioning; final box.x computed in Step 5
+        box.x = containerX + (s.margin_left.unit == LengthUnit::Auto ? 0 : margin.left);
+    }
+    box.y = containerY;
+    box.y = containerY;
+
+    int contentX = box.x + border.left + padding.left;
+    int contentY = box.y + border.top + padding.top;
+
+    int contentWidth = hasExplicitWidth
+        ? std::max((double)0, (s.boxSizing == BoxSizing::ContentBox)
+            ? ResolveFromWindow(s.width, containerWidth, inheritedFontSize)
+            : ResolveFromWindow(s.width, containerWidth, inheritedFontSize) - padding.Horizontal() - border.Horizontal())
+        : containerWidth;
+
+    // Note: Adjust containerHeight base depending on parent's BoxSizing strategy
+    int contentHeight = std::max((double)0, containerHeight - padding.Vertical() - border.Vertical());
+
+    // 3. Layout Children via BFC
     auto ctx = std::make_unique<BlockFormattingContext>(*this);
     int endY = ctx->Layout(node, box, contentX, contentY, contentWidth, contentHeight);
 
-    // Retrieve the last child's trailing margin.
-    // If this box has no bottom border or padding, the margin collapses upward
-    // into the parent BFC (CSS §8.3.1). We signal this via escapedMarginBottom
-    // so the parent BFC can fold it into its own prevMarginBottom and perform
-    // the three-way collapse with the next sibling's margin-top.
-    // If there IS a bottom edge, the margin is contained — add it to endY so
-    // it contributes to this box's height, and report zero escaped margin.
-    double trailingMargin   = ctx->GetLastChildMarginBottom();
-    bool hasBottomEdge   = (padding.bottom > 0 || border.bottom > 0);
-    double escapedMargin    = 0;
+    // 4. Margin Collapsing Logic
+    int trailingMargin = ctx->GetLastChildMarginBottom();
+    bool hasBottomEdge = (padding.bottom > 0 || border.bottom > 0);
+    int escapedMargin  = 0;
 
     if (hasBottomEdge) {
-        endY += trailingMargin;   // last child's margin is contained
+        endY += trailingMargin;
     } else {
-        // Last child's margin collapses through to us
         escapedMargin = std::max(escapedMargin, trailingMargin);
     }
 
-    // Always: our own margin_bottom escapes to the parent BFC
-    escapedMargin = std::max(escapedMargin, margin.bottom);
-    // 5. Shrink-to-Fit Pass
-    bool shrinkToFit = (node.tag == "span" || node.tag == "button");
-    if (!hasExplicitWidth && shrinkToFit && !box.children.empty()) {
-        int maxRight = contentX;
-        for (const auto& cb : box.children) {
-            maxRight = std::max(maxRight, cb.x + cb.width);
-        }
-        box.width = (maxRight - contentX) + padding.Horizontal() + border.Horizontal();
+    // Your own margin always participates in parent context collapsing
+    escapedMargin = std::max((double)escapedMargin, margin.bottom);
 
-        // Re-center if margins were auto
-        int finalSpace = containerWidth - box.width;
-        if (finalSpace > 0 && s.margin_left.unit == LengthUnit::Auto && s.margin_right.unit == LengthUnit::Auto) {
-            box.x = containerX + finalSpace / 2;
+    // 5. Post-Layout Shrink-to-Fit Adjustment
+    if (!hasExplicitWidth && shrinkToFit) {
+        int minLeft = contentX;
+        int maxRight = contentX;
+
+        if (!box.children.empty()) {
+            minLeft = INT_MAX;
+            maxRight = INT_MIN;
+            for (const auto& cb : box.children) {
+                minLeft = std::min(minLeft, cb.x);
+                maxRight = std::max(maxRight, cb.x + cb.width);
+            }
         }
+
+        int contentW = std::max(0, maxRight - minLeft);
+        box.width = contentW + padding.Horizontal() + border.Horizontal();
+
+        // FIX: Recalculate margins and x-coordinate now that we know the true width
+        BoxEdges finalMargin = margin;
+        ApplyMarginCentering(s, finalMargin, containerWidth, box.width);
+        box.x = containerX + finalMargin.left + box.TextCenteringOffset;
+        std::function<void(LayoutBox&)> removeChildPadding =
+            [&](LayoutBox& child) {
+                child.x -= padding.left;
+
+                for (auto& c : child.children) {
+                    removeChildPadding(c);
+                }
+        };
+        removeChildPadding(box);
+
+        // Update margin for debug data write-back later
+        margin.left = finalMargin.left;
+        margin.right = finalMargin.right;
     }
 
-    // 6. Resolve Height
+    // 6. Height Resolution
     if (s.height.unit != LengthUnit::Auto) {
-        int computedContent = ResolveFromWindow(s.height, containerHeight, InheritedFontSize);
+        int computedContent = ResolveFromWindow(s.height, containerHeight, inheritedFontSize);
         box.height = (s.boxSizing == BoxSizing::ContentBox)
                      ? computedContent + padding.Vertical() + border.Vertical()
                      : computedContent;
-        // Explicit height contains the margin entirely — nothing escapes.
-        escapedMargin = 0;
+        // Child margins cannot escape a fixed height boundary, but our own bottom margin still can
+        escapedMargin = margin.bottom;
     } else {
         box.height = (endY - contentY) + padding.Vertical() + border.Vertical();
     }
 
-    // Clamp min/max height
-    if (s.max_height.unit != LengthUnit::Auto) box.height = std::min(box.height, (int)ResolveFromWindow(s.max_height, 0, InheritedFontSize));
-    if (s.min_height.unit != LengthUnit::Auto) box.height = std::max(box.height, (int)ResolveFromWindow(s.min_height, 0, InheritedFontSize));
+    // Clamp constraints
+    if (s.max_height.unit != LengthUnit::Auto) box.height = std::min((double)box.height, ResolveFromWindow(s.max_height, 0, inheritedFontSize));
+    if (s.min_height.unit != LengthUnit::Auto) box.height = std::max((double)box.height, ResolveFromWindow(s.min_height, 0, inheritedFontSize));
 
     // 7. Write Back Debug Data
+
     auto& rd = box.node->renderData;
+
     rd.box = { (float)box.x, (float)box.y, (float)box.width, (float)box.height };
 
-    rd.resolved_margin_top    = margin.top;    rd.resolved_margin_right  = margin.right;
-    rd.resolved_margin_bottom = margin.bottom; rd.resolved_margin_left   = margin.left;
 
-    rd.resolved_padding_top    = padding.top;    rd.resolved_padding_right  = padding.right;
-    rd.resolved_padding_bottom = padding.bottom; rd.resolved_padding_left   = padding.left;
+    rd.resolved_margin_top = margin.top; rd.resolved_margin_right = margin.right;
 
-    return { std::move(box), escapedMargin };
+    rd.resolved_margin_bottom = margin.bottom; rd.resolved_margin_left = margin.left;
+
+
+    rd.resolved_padding_top = padding.top;
+    rd.resolved_padding_right = padding.right;
+    rd.resolved_padding_bottom = padding.bottom;
+    rd.resolved_padding_left = padding.left;
+
+
+    return { std::move(box), (double)escapedMargin };
 }
 
 
@@ -188,7 +431,7 @@ void LayoutGenerator::Update(Node& dom) {
         renderer.GetHeight(), ResolveFontSize(body->computedStyle.font_size, renderer.GetWidth(), renderer.GetHeight(), 16));
     // Update() is the root of the layout tree — nothing above it to collapse
     // into, so we discard escapedMarginBottom here intentionally.
-    BlockResult result = LayoutBlock(*body, 0, bodyMarginTop, renderer.GetWidth(), renderer.GetHeight());
+    LayoutResult result = LayoutNode(*body, 0, bodyMarginTop, renderer.GetWidth(), renderer.GetHeight());
     root = std::move(result.box);
 }
 

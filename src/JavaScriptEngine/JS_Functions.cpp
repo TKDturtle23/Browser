@@ -249,7 +249,6 @@ JSValue JavascriptFunctions::js_console_log(JSContext *ctx, JSValue this_val, in
         value_str = "    " + value_str;
     }
 
-
     switch (magic) {
         case (0): { // log
             Logger::Log(c_str, GetJSFileAndLine(ctx), js_ctx.GroupLevel); break;

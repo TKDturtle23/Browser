@@ -20,7 +20,7 @@ struct TextHitResult {
 
 class LayoutRenderer {
 public:
-    explicit LayoutRenderer(RendererSurface& renderer);
+    explicit LayoutRenderer(RendererSurface& renderer, FallbackFonts& FallbackFont);
 
     void resize(int x, int y);
     void RenderRoot(LayoutBox& root);
@@ -58,7 +58,7 @@ private:
     RendererSurface& renderer;
     RenderTargetID   pickTarget  = 0;     // 0 = disabled
     bool             isPickPass  = false;
-
+    FallbackFonts& FallbackFont;
     uint32_t                          nextPickID = 1;
     std::unordered_map<uint32_t, LayoutBox*> pickMap;
 

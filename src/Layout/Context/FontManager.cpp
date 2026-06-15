@@ -6,7 +6,7 @@
 #include "Layout/LayoutHelper.h"
 #include "Render/Renderer.h"
 
-Font* FontManager::fallbackFont;
+FallbackFonts* FontManager::fallbackFont;
 std::unordered_map<std::string, FontGroup> FontManager::Fonts;
 
 Font& FontManager::ResolveFont(const Style& s) {
@@ -27,7 +27,7 @@ Font& FontManager::ResolveFont(const Style& s) {
         return *group.base;
     }
 
-    return *fallbackFont;
+    return fallbackFont->Primary;
 }
 
 FontMetrics FontManager::PrepareFontContext(
@@ -61,6 +61,10 @@ FontGroup FontManager::GetFontGroup(std::string name) {
     return Fonts.at(name);
 }
 
-void FontManager::setFallbackFont(Font* font) {
+void FontManager::setFallbackFont(FallbackFonts *font) {
     fallbackFont = font;
+}
+
+FallbackFonts * FontManager::getFallbackFont() {
+    return fallbackFont;
 }

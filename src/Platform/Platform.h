@@ -16,7 +16,10 @@ class Platform;
 std::unique_ptr<Platform>
 CreatePlatform();
 #include "../Color.h"
-
+enum class CursorType {
+    Arrow,
+    IBeam
+};
 enum class EventType {
     None,
     Quit,
@@ -84,7 +87,7 @@ public:
         int height,
         const char* title, bool PrimaryWindow // Primary window needs to be the last window to close
     ) = 0;
-
+    virtual void SetCursorType(CursorType type) = 0;
     virtual void CloseWindow() = 0;
 
     virtual void* GetNativeHandle() const = 0;

@@ -17,12 +17,12 @@ public:
 
     int LayoutRoots(std::vector<Node*>& roots,
                     LayoutBox& parent,
-                    int startX, int startY, int containerWidth) const;
+                    int startX, int startY, int containerWidth, int containerHeight) const;
 
     int Layout(Node&, LayoutBox&, int, int contentY, int, int contentHeight) override {
         return contentY;
     }
-
+    [[nodiscard]] int GetLastChildMarginBottom() const override { return 0; } // unused
 private:
     static void FinalizeLineMetrics(LayoutBox& line, LayoutGenerator& lr);
 

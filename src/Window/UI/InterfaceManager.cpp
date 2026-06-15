@@ -34,7 +34,7 @@ namespace {
 
 UIManager::UIManager(int w, int h)
     : windowWidth(w), windowHeight(h),
-      font("arial/ARIAL.TTF", 14)
+      font("Fonts/arial/ARIAL.TTF", 14)
 {
     renderer = std::make_unique<RendererSurface>(w, h);
 

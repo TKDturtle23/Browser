@@ -29,12 +29,16 @@ public:
 
     BoxEdges ResolveMargins(const Style& s, int containerWidth, int resolved_font_size) const;
 
-    void ApplyMarginCentering(const Style &s, BoxEdges &margin, int containerWidth, int boxWidth) const;
+    static void ApplyMarginCentering(const Style &s, BoxEdges &margin, int containerWidth, int boxWidth) ;
+
+    LayoutResult LayoutNode(Node &node, int containerX, int containerY, int containerWidth, int containerHeight);
+
+    LayoutResult LayoutFlex(Node &node, int containerX, int containerY, int containerWidth, int containerHeight);
 
 
     // Lay out a single block-level node.  Delegates child layout to the
     // appropriate FormattingContext.
-    BlockResult LayoutBlock(Node& node, int containerX, int containerY,
+    LayoutResult LayoutBlock(Node& node, int containerX, int containerY,
                            int containerWidth, int containerHeight);
 
 

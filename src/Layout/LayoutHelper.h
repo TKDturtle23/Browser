@@ -6,7 +6,7 @@
 #define BROWSER_LAYOUTHELPER_H
 #include <string>
 
-#include "Node.h"
+#include "../Node/Node.h"
 #include "Text/Font.h"
 struct FontGroup {
     std::shared_ptr<Font> base;
@@ -30,14 +30,14 @@ struct BoxEdges {
 };
 struct text_char
 {
-    char c;
+    char32_t c;
     bool highlighted = false;
 };
 struct Text
 {
 std::vector<text_char> chars;
     Text() = default;
-    Text(std::string t)
+    Text(std::u32string t)
     {
         for (auto &c : t)
         {
@@ -54,6 +54,7 @@ struct LayoutBox {
     int height = 0;
     double fontSize = 0; // for TextRun boxes
 
+    float TextCenteringOffset = 0;
     int lineAscent = 0;
     int lineDescent = 0;
 

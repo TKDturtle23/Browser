@@ -432,6 +432,8 @@ void ComputeStyle(Node& node, const Style* parentStyle)
     result.backgroundColor = spec.backgroundColor;
     result.hasBackground   = spec.hasBackground;
 
+    result.flex = spec.flex;
+
     // Copy over the flags tracking state
     result.set = spec.set;
 
@@ -440,7 +442,9 @@ void ComputeStyle(Node& node, const Style* parentStyle)
     // ============================================================
 
     node.computedStyle = result;
-
+    if (node.tag == "button" && !result.set.display) {
+        node.computedStyle.display = DisplayType::InlineBlock;
+    }
     for (auto& child : node.children)
     {
         ComputeStyle(*child, &node.computedStyle);

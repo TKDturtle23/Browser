@@ -5,7 +5,6 @@
 #include "WordCollector.h"
 #include "LayoutHelper.h"
 #include "Render/Backend/IRendererBackend.h"
-
 void WordCollector::Visit(Node &node) {
     // Walk up the parent chain to find a resolved px font size to use as the
     // em base. Parents may themselves be em/rem/% so we collect the chain
@@ -96,22 +95,23 @@ void WordCollector::VisitText(Node &node, int inheritedFontSize) {
     IRenderBackend::GetRenderBackend().get(),
     inheritedFontSize
 );
-    const std::string& t = node.text;
+    std::string utf8 = node.text;
+    std::u32string codepoints = Utf8ToUtf32(utf8);
     size_t i = 0;
 
-    while (i < t.size()) {
-        if (std::isspace(static_cast<unsigned char>(t[i]))) {
+    while (i < codepoints.size()) {
+        if (std::isspace(codepoints[i])) {
             pendingSpace_ = true;
-            while (i < t.size() && std::isspace(static_cast<unsigned char>(t[i]))) ++i;
+            while (i < codepoints.size() && std::isspace(codepoints[i])) ++i;
             continue;
         }
 
         size_t start = i;
-        while (i < t.size() && !std::isspace(static_cast<unsigned char>(t[i]))) ++i;
+        while (i < codepoints.size() && !std::isspace(codepoints[i])) ++i;
 
         Word w;
         w.node           = &node;
-        w.text           = t.substr(start, i - start);
+        w.text           = codepoints.substr(start, i - start);
         w.width          = MeasureText(font, w.text);
         w.fontSize       = font.GetCurrentSize();
         w.hasSpaceBefore = pendingSpace_;
@@ -123,23 +123,33 @@ void WordCollector::VisitText(Node &node, int inheritedFontSize) {
     }
 }
 
-int WordCollector::MeasureText(Font &font, const std::string &s) {
+int WordCollector::MeasureText(Font &f, const std::u32string &s) {
     if (s.empty()) return 0;
 
     int w = 0;
-    char prev = 0;
-
+    char32_t prev = 0;
+    Font *font = nullptr;
     for (size_t i = 0; i < s.size() - 1; ++i) {
-        char c = s[i];
-        if (prev) w += font.GetKerning(c, prev).x >> 6;
-        w += font.GetGlyph(IRenderBackend::GetRenderBackend().get(), c).advance;
+        char32_t c = s[i];
+
+        if (f.HasSymbol(c)) {
+            font = &f;
+        } else if (fallback.Primary.HasSymbol(c)) {
+            font = &fallback.Primary;
+        } else if (fallback.Symbol.HasSymbol(c)) {
+            font = &fallback.Symbol;
+        } else if (fallback.Emoji.HasSymbol(c)) {
+            font = &fallback.Emoji;
+        } else {font = &f;}
+        if (prev) w += font->GetKerning(c, prev).x >> 6;
+        w += font->GetGlyph(IRenderBackend::GetRenderBackend().get(), c).advance;
         prev = c;
     }
+    if (!font) font = &f;
+    char32_t last = s.back();
+    if (prev) w += font->GetKerning(last, prev).x >> 6;
 
-    char last = s.back();
-    if (prev) w += font.GetKerning(last, prev).x >> 6;
-
-    const auto& g = font.GetGlyph(IRenderBackend::GetRenderBackend().get(), last);
+    const auto& g = font->GetGlyph(IRenderBackend::GetRenderBackend().get(), last);
     w += std::max(g.advance, g.bearingX + g.width);
 
     return w;

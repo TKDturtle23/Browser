@@ -37,13 +37,13 @@ int BlockFormattingContext::Layout(Node &node, LayoutBox &parent, int contentX, 
                 anonBox.y      = cursorY;
                 anonBox.width  = contentWidth;
 
-                i = LayoutInlineRun(kids, i, anonBox, contentX, cursorY, contentWidth,
+                i = LayoutInlineRun(kids, i, anonBox, contentX, cursorY, contentWidth, contentHeight,
                                     node.computedStyle.textAlign, cursorY);
 
                 anonBox.height = std::max(0, cursorY - anonBox.y);
                 parent.children.push_back(std::move(anonBox));
             } else {
-                i = LayoutInlineRun(kids, i, parent, contentX, cursorY, contentWidth,
+                i = LayoutInlineRun(kids, i, parent, contentX, cursorY, contentWidth, contentHeight,
                                     node.computedStyle.textAlign, cursorY);
             }
         } else {
@@ -68,7 +68,7 @@ int BlockFormattingContext::Layout(Node &node, LayoutBox &parent, int contentX, 
             int collapsedMargin = std::max(prevMarginBottom, marginTop);
             cursorY += collapsedMargin;
 
-            BlockResult result = lr_.LayoutBlock(child, contentX, cursorY, contentWidth, contentHeight);
+            LayoutResult result = lr_.LayoutBlock(child, contentX, cursorY, contentWidth, contentHeight);
             cursorY = result.box.y + result.box.height;
 
             // If the child had no bottom edge (border + padding == 0), its trailing
@@ -90,7 +90,7 @@ int BlockFormattingContext::Layout(Node &node, LayoutBox &parent, int contentX, 
 }
 
 size_t BlockFormattingContext::LayoutInlineRun(std::vector<std::unique_ptr<Node>> &kids, size_t start,
-    LayoutBox &parent, int contentX, int contentY, int contentWidth, TextAlign align, int &cursorY) const {
+    LayoutBox &parent, int contentX, int contentY, int contentWidth, int contentHeight, TextAlign align, int &cursorY) const {
     std::vector<Node*> run;
     size_t j = start;
     while (j < kids.size()) {
@@ -103,7 +103,7 @@ size_t BlockFormattingContext::LayoutInlineRun(std::vector<std::unique_ptr<Node>
 
     if (!run.empty()) {
         InlineFormattingContext ifc(lr_, align);
-        cursorY = ifc.LayoutRoots(run, parent, contentX, contentY, contentWidth);
+        cursorY = ifc.LayoutRoots(run, parent, contentX, contentY, contentWidth, contentHeight);
     }
     return j;
 }

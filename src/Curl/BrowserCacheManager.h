@@ -3,6 +3,7 @@
 
 #include <string>
 #include <map>
+
 #include "CurlGrabber.h"
 
 class BrowserCacheManager {
@@ -35,6 +36,8 @@ private:
     void SaveIndex();
 
     static long long GetCurrentUnixTime();
+
+    std::string LoadOfflinePage();
 
     static long long ParseMaxAge(const std::string& cacheControlHeader);
     

@@ -7,7 +7,7 @@
 #include <memory>
 #include <string>
 
-#include "Node.h"
+#include "../Node/Node.h"
 #include "quickjs.h"
 struct JavascriptContext {
     Node *document_node;

@@ -5,11 +5,11 @@
 #include <vector>
 #include <functional>
 
-#include "UI/InterfaceManager.h"
+#include "../UI/InterfaceManager.h"
 #include "Render/Backend/IRendererBackend.h"
-#include "../Debug/Logger.h"
+#include "../../Debug/Logger.h"
 #include "JavaScriptEngine/JavaScriptEngine.h"
-#include "CurlGrabber.h"
+#include "../../Curl/CurlGrabber.h"
 // Forward declarations
 class Platform;
 struct Node;
@@ -83,7 +83,7 @@ public:
     // Returns false if the window was closed by the user (so caller can set isOpen = false).
     bool Render();
 
-    const Node *GetSelectedNode();
+    const Node *GetSelectedNode() const;
     bool Redraw();
 
     void HandleEvent(const Event& event);

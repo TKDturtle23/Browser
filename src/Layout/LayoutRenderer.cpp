@@ -11,7 +11,7 @@
 #include "Context/FontManager.h"
 
 
-LayoutRenderer::LayoutRenderer(RendererSurface &renderer) : renderer(renderer)
+LayoutRenderer::LayoutRenderer(RendererSurface &renderer, FallbackFonts& FallbackFont) : renderer(renderer), FallbackFont(FallbackFont)
 {
 pickTarget = IRenderBackend::GetRenderBackend().get()->CreateRenderTarget(renderer.GetWidth(), renderer.GetHeight(), false);
 }
@@ -145,15 +145,37 @@ void LayoutRenderer::RenderTextRun(LayoutBox& box) {
     int baseline = box.y + m.ascent;
     Color color  = s.color;
     int cursorX  = box.x;
-    char prev    = 0;
+    char32_t prev    = 0;
 
     for (auto c : box.text.chars) {
         auto kern = font->GetKerning(c.c, prev).x >> 6;
         if (prev) cursorX += kern;
-        const Glyph& g = font->GetGlyph(IRenderBackend::GetRenderBackend().get(), c.c);
-        renderer.DrawGlyph(cursorX + g.bearingX, baseline - g.bearingY, g, color);
+        if (font->HasSymbol(c.c)) {
+            const Glyph& g = font->GetGlyph(IRenderBackend::GetRenderBackend().get(), c.c);
+            renderer.DrawGlyph(cursorX + g.bearingX, baseline - g.bearingY, g, color);
+            cursorX += g.advance;
+        } else {
+            // fallback font
+            if (FallbackFont.Primary.HasSymbol(c.c)) {
+                const Glyph& g = FallbackFont.Primary.GetGlyph(IRenderBackend::GetRenderBackend().get(), c.c);
+                renderer.DrawGlyph(cursorX + g.bearingX, baseline - g.bearingY, g, color);
+                cursorX += g.advance;
+            }
+            else if (FallbackFont.Symbol.HasSymbol(c.c)) {
+                const Glyph& g = FallbackFont.Symbol.GetGlyph(IRenderBackend::GetRenderBackend().get(), c.c);
+                renderer.DrawGlyph(cursorX + g.bearingX, baseline - g.bearingY, g, color);
+                cursorX += g.advance;
+            }
+            else if (FallbackFont.Emoji.HasSymbol(c.c)) {
+                FallbackFont.Emoji.SetSize(IRenderBackend::GetRenderBackend().get(), box.fontSize);
+                const Glyph& g = FallbackFont.Emoji.GetGlyph(IRenderBackend::GetRenderBackend().get(), c.c);
+                renderer.DrawGlyph(cursorX + g.bearingX, baseline - g.bearingY, g, color);
+                cursorX += g.advance;
+            }
+        }
 
-        cursorX += g.advance;
+
+
         prev = c.c;
     }
 }
@@ -254,113 +276,72 @@ void LayoutRenderer::RenderSingleBorderEdge(const BorderSide& edge, int start, i
     }
 }
 
-void LayoutRenderer::RenderLineSelection(
-    LayoutBox& line)
+void LayoutRenderer::RenderLineSelection(LayoutBox& line)
 {
-    if (line.children.empty())
-        return;
-
-    struct Rect {
-        int x;
-        int y;
-        int width;
-        int height;
-    };
-
-    std::vector<Rect> rects;
-
-    bool inSelection = false;
-
-    int selStart = 0;
-    int selEnd   = 0;
+    if (line.children.empty()) return;
 
     int top    = line.y + 1;
     int height = line.height - 2;
+    bool inSelection = false;
+    int selStart = 0, selEnd = 0;
 
-    for (size_t i = 0; i < line.children.size(); i++) {
+    for (auto& run : line.children) {
+        if (run.kind != BoxKind::TextRun) continue;
+        if (!run.node) continue;
 
-        LayoutBox& run =
-            line.children[i];
+        const Style& s = run.node->parent
+            ? run.node->parent->computedStyle
+            : run.node->computedStyle;
 
-        if (run.kind != BoxKind::TextRun)
-            continue;
+        Font* f = nullptr;
+        FontManager::PrepareFontContext(s, run.fontSize, f,
+                                        renderer.GetWidth(), renderer.GetHeight());
 
-        //---------------------------------
-        // Determine if run is selected
-        //---------------------------------
-
-        bool selected = false;
+        int cursorX = run.x;
+        char32_t prev = 0;
 
         for (const auto& ch : run.text.chars) {
+            Font* font = nullptr;
+            if (f->HasSymbol(ch.c)) {
+                font = f;
+            } else if (FallbackFont.Primary.HasSymbol(ch.c)) {
+                font = &FallbackFont.Primary;
+            } else if (FallbackFont.Symbol.HasSymbol(ch.c)) {
+                font = &FallbackFont.Symbol;
+            } else if (FallbackFont.Emoji.HasSymbol(ch.c)) {
+                font = &FallbackFont.Emoji;
+            } else {font = f;}
+            int kern = prev ? (font->GetKerning(prev, ch.c).x >> 6) : 0;
+            cursorX += kern;
+
+            const Glyph& g = font->GetGlyph(
+                IRenderBackend::GetRenderBackend().get(), ch.c);
+
+            int glyphEnd = cursorX + g.advance;
+
             if (ch.highlighted) {
-                selected = true;
-                break;
-            }
-        }
-
-        //---------------------------------
-        // Start selection
-        //---------------------------------
-
-        if (selected) {
-
-            if (!inSelection) {
-                selStart = run.x;
-                selEnd   = run.x + run.width;
-                inSelection = true;
+                if (!inSelection) {
+                    selStart   = cursorX;
+                    inSelection = true;
+                }
+                selEnd = glyphEnd;   // extend to cover this glyph
             } else {
-
-                // extend THROUGH spacing
-                selEnd = run.x + run.width;
+                if (inSelection) {
+                    renderer.FillRect(selStart, top, selEnd - selStart, height,
+                                      Color(215, 120, 0, 140));
+                    inSelection = false;
+                }
             }
 
-        } else {
-
-            //---------------------------------
-            // flush selection
-            //---------------------------------
-
-            if (inSelection) {
-
-                rects.push_back({
-                    selStart,
-                    top,
-                    selEnd - selStart,
-                    height
-                });
-
-                inSelection = false;
-            }
+            cursorX += g.advance;
+            prev = ch.c;
         }
     }
 
-    //---------------------------------
     // trailing selection
-    //---------------------------------
-
-    if (inSelection) {
-
-        rects.push_back({
-            selStart,
-            top,
-            selEnd - selStart,
-            height
-        });
-    }
-
-    //---------------------------------
-    // render
-    //---------------------------------
-
-    for (const auto& r : rects) {
-
-        renderer.FillRect(
-            r.x,
-            r.y,
-            r.width,
-            r.height,
-            Color(215, 120, 0, 140));
-    }
+    if (inSelection)
+        renderer.FillRect(selStart, top, selEnd - selStart, height,
+                          Color(215, 120, 0, 140));
 }
 void LayoutRenderer::RenderLine(LayoutBox& box, int textHeight) {
     if (box.children.empty()) return;
@@ -494,21 +475,30 @@ int LayoutRenderer::GetCharacterOffsetAtX(
             ? run.node->parent->computedStyle
             : run.node->computedStyle;
 
-    Font* font = nullptr;
+    Font* f = nullptr;
 
     FontMetrics m =
         FontManager::PrepareFontContext(
             s,
             run.fontSize,
-            font,
+            f,
             renderer.GetWidth(),
             renderer.GetHeight());
 
     int cursorX = run.x;
-    char prev = 0;
+    char32_t prev = 0;
 
     for (size_t i = 0; i < run.text.chars.size(); i++) {
-
+        Font *font = nullptr;
+        if (f->HasSymbol(run.text.chars[i].c)) {
+            font = f;
+        } else if (FallbackFont.Primary.HasSymbol(run.text.chars[i].c)) {
+            font = &FallbackFont.Primary;
+        } else if (FallbackFont.Symbol.HasSymbol(run.text.chars[i].c)) {
+            font = &FallbackFont.Symbol;
+        } else if (FallbackFont.Emoji.HasSymbol(run.text.chars[i].c)) {
+            font = &FallbackFont.Emoji;
+        } else {font = f;}
         const auto& c =
             run.text.chars[i];
 

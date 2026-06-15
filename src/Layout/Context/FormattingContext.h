@@ -19,6 +19,7 @@ public:
                        int contentX,
                        int contentY,
                        int contentWidth, int contentHeight) = 0;
+    [[nodiscard]] virtual int GetLastChildMarginBottom() const = 0;
 };
 
 

@@ -162,7 +162,70 @@ static LRESULT CALLBACK WindowProc(
 
 
         }
+        case WM_SETCURSOR: {
 
+            //
+            // LOWORD(lParam) contains the hit-test result
+            //
+            UINT hit = LOWORD(lParam);
+
+            switch (hit) {
+
+                //
+                // Resize cursors
+                //
+                case HTLEFT:
+                case HTRIGHT:
+                    SetCursor(
+                        LoadCursor(nullptr, IDC_SIZEWE)
+                    );
+                    return TRUE;
+
+                case HTTOP:
+                case HTBOTTOM:
+                    SetCursor(
+                        LoadCursor(nullptr, IDC_SIZENS)
+                    );
+                    return TRUE;
+
+                case HTTOPLEFT:
+                case HTBOTTOMRIGHT:
+                    SetCursor(
+                        LoadCursor(nullptr, IDC_SIZENWSE)
+                    );
+                    return TRUE;
+
+                case HTTOPRIGHT:
+                case HTBOTTOMLEFT:
+                    SetCursor(
+                        LoadCursor(nullptr, IDC_SIZENESW)
+                    );
+                    return TRUE;
+
+                    //
+                    // Drag region
+                    //
+                case HTCAPTION:
+                    SetCursor(
+                        LoadCursor(nullptr, IDC_ARROW)
+                    );
+                    return TRUE;
+
+                    //
+                    // Client area:
+                    // let your engine decide (IBeam etc)
+                    //
+                case HTCLIENT:
+                    return TRUE;
+            }
+
+            return DefWindowProc(
+                hwnd,
+                uMsg,
+                wParam,
+                lParam
+            );
+        }
         default:
             return DefWindowProc(
                 hwnd,
@@ -546,6 +609,24 @@ void Platform_Win32::SetMinimumSize(int width, int height) {
 min_width = width;
     min_height = height;
 }
+
+void Platform_Win32::SetCursorType(CursorType type) {
+    HCURSOR cursor = nullptr;
+
+    switch (type) {
+        case CursorType::IBeam:
+            cursor = LoadCursor(nullptr, IDC_IBEAM);
+            break;
+
+        case CursorType::Arrow:
+        default:
+            cursor = LoadCursor(nullptr, IDC_ARROW);
+            break;
+    }
+
+    ::SetCursor(cursor);
+}
+
 void Platform_Win32::MinimizeWindow() {
     ShowWindow(hwnd, SW_MINIMIZE);
 }

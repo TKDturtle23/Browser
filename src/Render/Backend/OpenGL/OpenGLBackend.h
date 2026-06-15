@@ -39,6 +39,8 @@ public:
         int height
     ) override;
 
+    void BootstrapGL(HDC realHDC);
+
     WindowID RegisterWindow(Platform* context
     ) override;
 
@@ -113,7 +115,7 @@ private:
     TextureID nextTextureID = 1;
     HGLRC hRC = nullptr; // Shared core rendering context pointer instance
     GLuint activeShaderOverride = 0;
-
+    int chosenPixelFormat = 0;
     GLint  batchShaderProjLoc  = -1;
     GLint  circleShaderProjLoc = -1;
     GLint  circleShaderMaskLoc = -1;

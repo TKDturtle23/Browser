@@ -1,7 +1,7 @@
 #pragma once
 #include <string>
 #include <vector>
-#include "../Node.h"
+#include "../Node/Node.h"
 
 struct CSSDeclaration {
     std::string property;

@@ -2,7 +2,7 @@
 // Created by tkdtu on 6/2/2026.
 //
 #include "Text/Font.h"
-#include "Node.h"
+#include "../../Node/Node.h"
 #include "Layout/LayoutHelper.h"
 #ifndef BROWSER_FONTMANAGER_H
 #define BROWSER_FONTMANAGER_H
@@ -16,11 +16,12 @@ public:
     static void AddFont(std::string name, const FontGroup& group);
     static FontGroup GetFontGroup(std::string name);
 
-    static void setFallbackFont(Font* font);
+    static void setFallbackFont(FallbackFonts *fonts);
+    static FallbackFonts* getFallbackFont();
 
 
 private:
-    static Font* fallbackFont;
+    static FallbackFonts *fallbackFont;
     static std::unordered_map<std::string, FontGroup> Fonts;
 };
 

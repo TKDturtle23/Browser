@@ -5,6 +5,7 @@
 #include "OpenGLBackend.h"
 #include "Platform/Platform_Win32.h"
 #include <algorithm>
+#include <iostream>
 #include <ranges>
 #include <stdexcept>
 
@@ -269,11 +270,145 @@ void OpenGLBackend::PushQuad(float x, float y, float w, float h,
     batchVertices.push_back({ x + w, y + h, r, g, b, a, u1, v1 });
     batchVertices.push_back({ x,     y + h, r, g, b, a, u0, v1 });
 }
+static HMODULE opengl32 = LoadLibraryA("opengl32.dll");
 
+static GLADapiproc gladWGLLoader(const char* name) {
+    GLADapiproc proc = reinterpret_cast<GLADapiproc>(wglGetProcAddress(name));
+    if (proc) return proc;
+    return reinterpret_cast<GLADapiproc>(GetProcAddress(opengl32, name));
+}
 // ---------------------------------------------------------------------------
 // RegisterWindow — context bootstrap happens exactly once
 // ---------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------
+// BootstrapGL — called once, uses a throwaway hidden HWND so the real
+// windows never receive a legacy pixel format.
+// ---------------------------------------------------------------------------
+void OpenGLBackend::BootstrapGL(HDC realHDC) {
+    // ── 1. Create a hidden dummy window ────────────────────────────────────
+    // We need a second HDC to do the bootstrap/WGL extension dance on so
+    // that the real window's HDC is never touched with a legacy PFD.
+    WNDCLASSA wc{};
+    wc.style         = CS_OWNDC;
+    wc.lpfnWndProc   = DefWindowProcA;
+    wc.hInstance     = GetModuleHandleA(nullptr);
+    wc.lpszClassName = "OGLBackend_Bootstrap";
+    RegisterClassA(&wc);   // idempotent — ignore failure on re-register
+
+    HWND dummyHWND = CreateWindowExA(
+        0, wc.lpszClassName, "",
+        WS_OVERLAPPEDWINDOW,
+        CW_USEDEFAULT, CW_USEDEFAULT, 1, 1,
+        nullptr, nullptr, wc.hInstance, nullptr);
+
+    if (!dummyHWND)
+        throw std::runtime_error("Bootstrap: CreateWindowEx failed.");
+
+    HDC dummyDC = GetDC(dummyHWND);
+
+    // ── 2. Legacy PFD on the dummy DC ──────────────────────────────────────
+    PIXELFORMATDESCRIPTOR pfd{};
+    pfd.nSize        = sizeof(pfd);
+    pfd.nVersion     = 1;
+    pfd.dwFlags      = PFD_DRAW_TO_WINDOW | PFD_SUPPORT_OPENGL | PFD_DOUBLEBUFFER;
+    pfd.iPixelType   = PFD_TYPE_RGBA;
+    pfd.cColorBits   = 32;
+    pfd.cDepthBits   = 24;
+    pfd.cStencilBits = 8;
+    pfd.iLayerType   = PFD_MAIN_PLANE;
+
+    int fmt = ChoosePixelFormat(dummyDC, &pfd);
+    if (!fmt || !SetPixelFormat(dummyDC, fmt, &pfd))
+        throw std::runtime_error("Bootstrap: legacy SetPixelFormat failed.");
+
+    // ── 3. Temporary legacy context ────────────────────────────────────────
+    HGLRC tempRC = wglCreateContext(dummyDC);
+    if (!tempRC || !wglMakeCurrent(dummyDC, tempRC))
+        throw std::runtime_error("Bootstrap: legacy wglMakeCurrent failed.");
+
+    // ── 4. Load WGL extensions ─────────────────────────────────────────────
+    if (gladLoadWGL(dummyDC, gladWGLLoader) == 0) {
+        wglMakeCurrent(nullptr, nullptr);
+        wglDeleteContext(tempRC);
+        throw std::runtime_error("Bootstrap: gladLoadWGL failed.");
+    }
+
+    wglMakeCurrent(nullptr, nullptr);
+    wglDeleteContext(tempRC);
+    ReleaseDC(dummyHWND, dummyDC);
+    DestroyWindow(dummyHWND);
+
+    // ── 5. Modern ARB pixel format on the REAL DC ──────────────────────────
+    if (!GLAD_WGL_ARB_pixel_format || !GLAD_WGL_ARB_create_context)
+        throw std::runtime_error("Required WGL extensions unavailable.");
+
+    const int pixelAttribs[] = {
+        WGL_DRAW_TO_WINDOW_ARB, GL_TRUE,
+        WGL_SUPPORT_OPENGL_ARB, GL_TRUE,
+        WGL_DOUBLE_BUFFER_ARB,  GL_TRUE,
+        WGL_PIXEL_TYPE_ARB,     WGL_TYPE_RGBA_ARB,
+        WGL_COLOR_BITS_ARB,     32,
+        WGL_DEPTH_BITS_ARB,     24,
+        WGL_STENCIL_BITS_ARB,   8,
+        WGL_SAMPLE_BUFFERS_ARB, 1,   // optional: uncomment if you want MSAA
+        WGL_SAMPLES_ARB,        4,   //
+        0
+    };
+
+    int modernFmt  = 0;
+    UINT numFmts   = 0;
+    if (!wglChoosePixelFormatARB(realHDC, pixelAttribs, nullptr, 1, &modernFmt, &numFmts)
+        || numFmts == 0)
+        throw std::runtime_error("Bootstrap: wglChoosePixelFormatARB failed.");
+
+    PIXELFORMATDESCRIPTOR modernPFD{};
+    DescribePixelFormat(realHDC, modernFmt, sizeof(modernPFD), &modernPFD);
+    if (!SetPixelFormat(realHDC, modernFmt, &modernPFD))
+        throw std::runtime_error("Bootstrap: modern SetPixelFormat failed.");
+
+    chosenPixelFormat = modernFmt;
+    // ── 6. Core 4.6 context ────────────────────────────────────────────────
+    int flags = 0;
+#ifdef _DEBUG
+    flags |= WGL_CONTEXT_DEBUG_BIT_ARB;
+#endif
+
+    const int ctxAttribs[] = {
+        WGL_CONTEXT_MAJOR_VERSION_ARB, 4,
+        WGL_CONTEXT_MINOR_VERSION_ARB, 6,
+        WGL_CONTEXT_PROFILE_MASK_ARB,  WGL_CONTEXT_CORE_PROFILE_BIT_ARB,
+        WGL_CONTEXT_FLAGS_ARB,         flags,
+        0
+    };
+
+    hRC = wglCreateContextAttribsARB(realHDC, nullptr, ctxAttribs);
+    if (!hRC)
+        throw std::runtime_error("Bootstrap: wglCreateContextAttribsARB failed.");
+
+    if (!wglMakeCurrent(realHDC, hRC)) {
+        wglDeleteContext(hRC);
+        hRC = nullptr;
+        throw std::runtime_error("Bootstrap: wglMakeCurrent(modern) failed.");
+    }
+
+    // ── 7. Load GL via GLAD2 ───────────────────────────────────────────────
+    if (gladLoadGL(gladWGLLoader) == 0) {
+        wglMakeCurrent(nullptr, nullptr);
+        wglDeleteContext(hRC);
+        hRC = nullptr;
+        throw std::runtime_error("Bootstrap: gladLoadGL failed.");
+    }
+
+    if (!GLAD_GL_VERSION_4_5)
+        throw std::runtime_error("OpenGL 4.5+ required.");
+
+    InitBatchPipeline();
+}
+
+// ---------------------------------------------------------------------------
+// RegisterWindow
+// ---------------------------------------------------------------------------
 WindowID OpenGLBackend::RegisterWindow(Platform* platform) {
     const WindowID id = nextWindowID++;
 
@@ -281,72 +416,31 @@ WindowID OpenGLBackend::RegisterWindow(Platform* platform) {
     HWND hwnd = reinterpret_cast<HWND>(win32Plat->GetNativeHandle());
     HDC  hdc  = GetDC(hwnd);
 
-    PIXELFORMATDESCRIPTOR pfd = {};
-    pfd.nSize        = sizeof(pfd);
-    pfd.nVersion     = 1;
-    pfd.dwFlags      = PFD_DRAW_TO_WINDOW | PFD_SUPPORT_OPENGL |
-                       PFD_DOUBLEBUFFER   | PFD_SUPPORT_COMPOSITION;
-    pfd.iPixelType   = PFD_TYPE_RGBA;
-    pfd.cColorBits   = 32;
-    pfd.cDepthBits   = 24;
-    pfd.cStencilBits = 8;
-    pfd.iLayerType   = PFD_MAIN_PLANE;
-
-    int pixelFormat = ChoosePixelFormat(hdc, &pfd);
-    if (!pixelFormat || !SetPixelFormat(hdc, pixelFormat, &pfd)) {
-        ReleaseDC(hwnd, hdc);
-        throw std::runtime_error("Failed to set pixel format.");
-    }
-
-    // Only create the shared HGLRC once (on first window registration)
     if (!hRC) {
-        HGLRC tempRC = wglCreateContext(hdc);
-        if (!tempRC) { ReleaseDC(hwnd, hdc); throw std::runtime_error("Temp GL context failed."); }
-        wglMakeCurrent(hdc, tempRC);
-
-        if (!gladLoadWGL(hdc, reinterpret_cast<GLADloadfunc>(wglGetProcAddress))) {
-            wglMakeCurrent(nullptr, nullptr);
-            wglDeleteContext(tempRC);
+        // First window: bootstrap GL using a hidden dummy window, then apply
+        // the modern pixel format to this real HDC inside BootstrapGL.
+        BootstrapGL(hdc);
+    } else {
+        // Reuse the exact same format index the context was created with.
+        // wglMakeCurrent requires pixel format indices to match, not just attributes.
+        PIXELFORMATDESCRIPTOR pfd{};
+        DescribePixelFormat(hdc, chosenPixelFormat, sizeof(pfd), &pfd);
+        if (!SetPixelFormat(hdc, chosenPixelFormat, &pfd)) {
             ReleaseDC(hwnd, hdc);
-            throw std::runtime_error("Failed to load WGL extensions.");
+            throw std::runtime_error("RegisterWindow: SetPixelFormat failed for new window.");
         }
-
-        int attribs[] = {
-            WGL_CONTEXT_MAJOR_VERSION_ARB, 4,
-            WGL_CONTEXT_MINOR_VERSION_ARB, 6,
-            WGL_CONTEXT_PROFILE_MASK_ARB,  WGL_CONTEXT_CORE_PROFILE_BIT_ARB,
-            WGL_CONTEXT_FLAGS_ARB,
-#ifdef _DEBUG
-            WGL_CONTEXT_DEBUG_BIT_ARB,
-#else
-            0,
-#endif
-            0
-        };
-
-        hRC = wglCreateContextAttribsARB(hdc, 0, attribs);
-        wglMakeCurrent(nullptr, nullptr);
-        wglDeleteContext(tempRC);
-
-        if (!hRC) { ReleaseDC(hwnd, hdc); throw std::runtime_error("Modern GL context failed."); }
-
-        wglMakeCurrent(hdc, hRC);
-
-        if (!gladLoadGL(reinterpret_cast<GLADloadfunc>(wglGetProcAddress))) {
-            wglMakeCurrent(nullptr, nullptr);
-            wglDeleteContext(hRC);
-            hRC = nullptr;
-            ReleaseDC(hwnd, hdc);
-            throw std::runtime_error("GLAD failed to load OpenGL functions.");
-        }
-
-        // One-time GPU resource setup once we have a valid context
-        InitBatchPipeline();
     }
 
-    windows[id] = OpenGLWindow{ .platform = platform, .hdc = hdc, .target = 0 };
+    windows[id] = OpenGLWindow{
+        .platform = platform,
+        .hdc      = hdc,
+        .target   = 0
+    };
+
     return id;
 }
+
+
 
 RenderTargetID OpenGLBackend::CreateRenderTarget(int width, int height,
         bool blend ) {
@@ -459,6 +553,7 @@ void OpenGLBackend::EndFrame() {
             if (!wglMakeCurrent(targetWindow->hdc, hRC)) {
                 DWORD error = GetLastError();
                 // Context switch failed! This safely prevents drawing to an incorrect window surface
+                std::cerr << "wglMakeCurrent failed: " << error << std::endl;
                 continue;
             }
         }
@@ -847,7 +942,7 @@ case RenderCommandType::FillRectRounded: {
 
 void OpenGLBackend::Present() {
     // Loop through every open window surface independently
-    for (auto& [windowID, window] : windows) {
+    for (auto &window: windows | std::views::values) {
         if (!window.platform || window.target == 0 || !window.hdc) {
             continue;
         }
@@ -883,10 +978,8 @@ TextureID OpenGLBackend::CreateFontAtlas(int width, int height) {
     GLuint texHandle;
 
     glCreateTextures(GL_TEXTURE_2D, 1, &texHandle);
-    glTextureStorage2D(texHandle, 1, GL_R8, width, height);
+    glTextureStorage2D(texHandle, 1, GL_RGBA8, width, height);
 
-    GLint swizzleMask[] = { GL_ONE, GL_ONE, GL_ONE, GL_RED };
-    glTextureParameteriv(texHandle, GL_TEXTURE_SWIZZLE_RGBA, swizzleMask);
     glTextureParameteri(texHandle, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
     glTextureParameteri(texHandle, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
     glTextureParameteri(texHandle, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
@@ -896,9 +989,26 @@ TextureID OpenGLBackend::CreateFontAtlas(int width, int height) {
     return id;
 }
 
-void OpenGLBackend::UpdateTextureSubImage(TextureID texture, int x, int y,
-                                          int width, int height, const uint8_t* pixels) {
+void OpenGLBackend::UpdateTextureSubImage(TextureID texture,
+                                          int x,
+                                          int y,
+                                          int width,
+                                          int height,
+                                          const uint8_t* pixels)
+{
     GLuint texHandle = nativeTextures[texture];
+
     glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
-    glTextureSubImage2D(texHandle, 0, x, y, width, height, GL_RED, GL_UNSIGNED_BYTE, pixels);
+
+    glTextureSubImage2D(
+        texHandle,
+        0,
+        x,
+        y,
+        width,
+        height,
+        GL_BGRA,
+        GL_UNSIGNED_BYTE,
+        pixels
+    );
 }

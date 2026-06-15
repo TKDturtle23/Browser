@@ -1,10 +1,12 @@
 #include "BrowserCacheManager.h"
+
 #include <fstream>
 #include <sstream>
 #include <chrono>
 #include <iostream>
 #include <algorithm>
 #include <cstdint>
+#include <filesystem>
 
 #ifdef ENABLE_VERBOSE_LOGGING
     #define LOG_VERBOSE(msg) std::cout << msg << std::endl
@@ -38,7 +40,56 @@ long long BrowserCacheManager::GetCurrentUnixTime() {
         std::chrono::system_clock::now().time_since_epoch()
     ).count();
 }
+std::string BrowserCacheManager::LoadOfflinePage() {
+    std::filesystem::path offlinePath =
+        std::filesystem::current_path() / "offline.html";
 
+    std::string offlineContent =
+        ReadFileFromDisk(offlinePath.string());
+
+    if (!offlineContent.empty()) {
+        return offlineContent;
+    }
+
+    return R"(
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Unable to Load</title>
+    <style>
+        body {
+            margin: 0;
+            background: #111;
+            color: #eee;
+            font-family: sans-serif;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            text-align: center;
+        }
+
+        h1 {
+            font-size: 48px;
+            margin-bottom: 10px;
+        }
+
+        p {
+            color: #aaa;
+            font-size: 18px;
+        }
+    </style>
+</head>
+<body>
+    <h1>Unable to connect</h1>
+    <p>The browser could not load the requested page.</p>
+</body>
+</html>
+)";
+}
 long long BrowserCacheManager::ParseMaxAge(const std::string& cacheControlHeader) {
     std::string headerCopy = cacheControlHeader;
     std::transform(headerCopy.begin(), headerCopy.end(), headerCopy.begin(), ::tolower);
@@ -92,7 +143,19 @@ std::string BrowserCacheManager::GetResource(const std::string& url) {
 
         CurlGrabber grabber;
         Grab response = grabber.GetData(url, conditionalHeaders);
+        // NETWORK FAILURE
+        if (response.status_code <= 0) {
+            LOG_VERBOSE("[NETWORK ERROR] Loading offline page.");
 
+            // Prefer stale cache over offline page
+            std::string staleCache = ReadFileFromDisk(localPath);
+
+            if (!staleCache.empty()) {
+                return staleCache;
+            }
+
+            return LoadOfflinePage();
+        }
         std::string cacheControl = GetHeaderValueValueInsensitive(response.headers, "cache-control");
         std::string etagVal = GetHeaderValueValueInsensitive(response.headers, "etag");
         std::string lastModVal = GetHeaderValueValueInsensitive(response.headers, "last-modified");
@@ -122,7 +185,11 @@ std::string BrowserCacheManager::GetResource(const std::string& url) {
     LOG_VERBOSE("[CACHE MISS] Fetching fresh network resource: " << url);
     CurlGrabber grabber;
     Grab response = grabber.GetData(url, {});
-
+    // NETWORK FAILURE
+    if (response.status_code <= 0) {
+        LOG_VERBOSE("[NETWORK ERROR] Loading offline page.");
+        return LoadOfflinePage();
+    }
     std::string cacheControl = GetHeaderValueValueInsensitive(response.headers, "cache-control");
     std::string etagVal = GetHeaderValueValueInsensitive(response.headers, "etag");
     std::string lastModVal = GetHeaderValueValueInsensitive(response.headers, "last-modified");
@@ -150,6 +217,10 @@ std::string BrowserCacheManager::GetResource(const std::string& url) {
 
         cacheIndex[urlHash] = meta;
         SaveIndex();
+    }
+    // Non-200 responses fallback
+    if (response.status_code != 200) {
+        return LoadOfflinePage();
     }
 
     return response.body;
