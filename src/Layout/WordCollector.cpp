@@ -141,6 +141,7 @@ int WordCollector::MeasureText(Font &f, const std::u32string &s) {
         } else if (fallback.Emoji.HasSymbol(c)) {
             font = &fallback.Emoji;
         } else {font = &f;}
+        font->SetSize(IRenderBackend::GetRenderBackend().get(), f.GetCurrentSize());
         if (prev) w += font->GetKerning(c, prev).x >> 6;
         w += font->GetGlyph(IRenderBackend::GetRenderBackend().get(), c).advance;
         prev = c;

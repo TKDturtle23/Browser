@@ -7,23 +7,26 @@
 #include <memory>
 #include <string>
 
+#include "JS_Functions.h"
 #include "QuickjsEngine.h"
+#include "Curl/BrowserCacheManager.h"
 
 
 class JavaScriptEngine {
 public:
-JavaScriptEngine();
+    JavaScriptEngine(BrowserCacheManager &cache);
     ~JavaScriptEngine();
     void InjectData();
-    std::string Run(const std::string& script_data, const std::string &script_name);
+    std::string Run(const std::string& script_data, const std::string &script_name, bool IsModule);
 
     bool Step() const;
     void RunAll() const;
 
 
-    JSContext *create_tab_context();
+    JSContext *create_tab_context(std::string URL, Node *DOM);
+    void DispatchEvent(const std::vector<EventListener> &Listeners, const std::string &type);
 
-    void set_active_context(JSContext *ctx);
+    void set_active_context(JSContext *ctx, const std::string &url);
 
     void destroy_tab_context(JSContext *ctx);
     JavaScriptEngine(const JavaScriptEngine&) = delete;

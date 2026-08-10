@@ -53,7 +53,7 @@ struct LayoutBox {
     int width = 0;
     int height = 0;
     double fontSize = 0; // for TextRun boxes
-
+    Font* resolvedFont = nullptr;
     float TextCenteringOffset = 0;
     int lineAscent = 0;
     int lineDescent = 0;

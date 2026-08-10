@@ -53,10 +53,13 @@ bool EventDispatcher::DispatchEvents(WindowManager& wm) {
         }
         else if (isMouseEvent) {
             if (hitUITopBar) {
-                if (event.type == EventType::MouseButtonPress  && event.button == 1)
+                if (event.type == EventType::MouseButtonPress  && event.button == 1) {
                     wm.ui_manager->InjectMouseButton(true);
-                if (event.type == EventType::MouseButtonRelease && event.button == 1)
+                }
+
+                if (event.type == EventType::MouseButtonRelease && event.button == 1) {
                     wm.ui_manager->InjectMouseButton(false);
+                }
                 if (event.type == EventType::MouseMove) {
                     wm.ui_manager->InjectMouseMove(event.x, event.y);
                     wm.mouse_x = event.x;

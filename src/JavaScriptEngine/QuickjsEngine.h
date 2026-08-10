@@ -9,9 +9,11 @@
 #include <stdexcept>
 #include <string>
 #include <vector>
-
+#include "Curl/BrowserCacheManager.h"
+#include "Modules/IEngineModule.h"
 #include "../Node/Node.h"
 #include "quickjs.h"
+#include "Modules/Vars/Timers.h"
 
 struct MockHTMLElement;
 
@@ -29,27 +31,33 @@ struct CallbackData {
     JSCallback callback;
     JSContext* ctx;
 };
-
+std::string GetJSFileAndLine(JSContext* ctx);
+std::string GetJSCallStack(JSContext *ctx);
 class QuickjsEngine {
 public:
-    void register_node_class();
+    void register_node_class() const;
 
-    QuickjsEngine();
+    QuickjsEngine(BrowserCacheManager &cache);
+
     ~QuickjsEngine();
 
 
     // Prevent copying to avoid accidental double-freeing of the JS runtime pointers
     QuickjsEngine(const QuickjsEngine&) = delete;
     QuickjsEngine& operator=(const QuickjsEngine&) = delete;
-    JSContext *create_tab_context();
+    JSContext *create_tab_context(const std::string& URL, Node *DOM);
 
-    void set_active_context(JSContext *ctx);
+    void set_active_context(JSContext *ctx, std::string URL);
+    [[nodiscard]] std::string GetActiveURL() const { return ActiveURL; };
+    void destroy_tab_context(JSContext *ctx) const;
 
-    void destroy_tab_context(JSContext *ctx);
+    void drain_jobs() const;
+
+    void log_exception(JSContext *ctx, const std::string &filename) const;
 
     // Execute a raw string of JavaScript code. Returns the result as a std::string.
     // Throws JavaScriptException if something goes wrong.
-    std::string execute(const std::string& script, const std::string& filename = "sandbox.js");
+    std::string execute(const std::string& script, const std::string& filename , bool IsModule) const;
 
     // Helper to inject a global string property (like browserInfo properties)
     void inject_global_string(const std::string& object_name, const std::string& property_name, const std::string& value) const;
@@ -78,11 +86,28 @@ public:
     void initialize_console() const;
     JSValue wrap_html_element(Node* element) const;
     static JSClassID get_node_class_id();
-private:
-    JSValue resolve_or_create_path(const std::string& path, std::string& out_final_key) const;
+    // Remove initialize_dom_bridge(), initialize_console(), wrap_html_element() from public API
+    // Add:
+    void register_module(std::unique_ptr<IEngineModule> module);
+    using ElementWrapper = std::function<void(JSContext*, JSValue, Node*)>;
+
+    // DOMBridge calls this during initialize():
+    void set_element_wrapper(ElementWrapper wrapper);
+    JSContext* get_active_context() const;
     struct Impl;
     std::unique_ptr<Impl> impl;
+    bool LoadModule(const std::string& path, std::string& out_src) const;
+private:
+    Timers timers_;
+    std::string ActiveURL;
+    BrowserCacheManager &cache;
+    std::vector<std::unique_ptr<IEngineModule>> m_modules;
+    JSValue resolve_or_create_path(const std::string& path, std::string& out_final_key) const;
+
+
     static JSClassID s_node_class_id;
+    ElementWrapper m_element_wrapper;
+
 
 };
 

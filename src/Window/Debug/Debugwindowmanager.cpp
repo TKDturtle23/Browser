@@ -713,7 +713,7 @@ void DebugWindowManager::RenderConsoleTab(int px, int py, int pw, int ph) {
         if (!jsBuffer.empty()) {
             if (jsEngine) {
                 Logger::Log("> " + jsBuffer, "Console Input", 0);
-                auto result = jsEngine->Run(jsBuffer, "Console.js");
+                auto result = jsEngine->Run(jsBuffer, "Console.js", false);
                 Logger::Log(result, "Console Output", 0);
             } else {
                 Logger::Log_Warning("JS Engine not attached.", "Debugger", 0);
@@ -725,7 +725,70 @@ void DebugWindowManager::RenderConsoleTab(int px, int py, int pw, int ph) {
         }
     }
 }
+void DebugWindowManager::SetScriptEntries(const std::vector<std::pair<std::string, std::string>>& scripts) {
+    scriptEntries = scripts;
+    scriptsDirty = true;
+    if (selectedScriptIndex >= (int)scriptEntries.size()) {
+        selectedScriptIndex = scriptEntries.empty() ? -1 : 0;
+    }
+}
+void DebugWindowManager::RenderScriptsTab(int px, int py, int pw, int ph) {
+    int listY = py + 4;
+    int listH = ph - 8;
+    int sidebarW = 200; // Width of the script file list
+    int contentW = pw - sidebarW - 12;
 
+    // --- Left Sidebar: Script Selection ---
+    ui->SetCursor(px + 4, listY);
+    if (ui->BeginListBox("scripts_list", sidebarW, listH, true, 22)) {
+        for (int i = 0; i < (int)scriptEntries.size(); ++i) {
+            ui->PushID("Script_Row_" + std::to_string(i));
+
+            // Check selection state
+            bool isSelected = (i == selectedScriptIndex);
+            if (ui->Selectable(scriptEntries[i].first, scriptEntries[i].first, isSelected, sidebarW - 8, 20)) {
+                selectedScriptIndex = i;
+                platform->needsRedraw = true;
+            }
+
+            ui->PopID();
+        }
+        ui->EndListBox();
+    }
+
+    // --- Right Pane: Source Code Viewer ---
+    int contentX = px + sidebarW + 8;
+    ui->SetCursor(contentX, listY);
+
+    if (selectedScriptIndex >= 0 && selectedScriptIndex < (int)scriptEntries.size()) {
+        const std::string& sourceCode = scriptEntries[selectedScriptIndex].second;
+
+        // Split and display lines using std::views::split (matching your DOM Text implementation)
+
+        if (ui->BeginListBox("script_content_view", contentW, listH, true, 18)) {
+            auto split_lines = sourceCode | std::views::split('\n');
+            int lineNum = 1;
+
+            for (auto&& chunk : split_lines) {
+                std::string line(chunk.begin(), chunk.end());
+                ui->PushID("Line_" + std::to_string(lineNum));
+
+                // Optional: Print line numbers
+                std::string formattedLine = std::to_string(lineNum) + " | " + line;
+                bool Selected=false;
+                ui->Selectable("CodeLine", formattedLine, Selected);
+
+                lineNum++;
+                ui->PopID();
+            }
+            ui->EndListBox();
+        }
+
+    } else {
+        // Fallback view when no script is selected
+        ui->Text("NoScriptSelected", "Select a script file from the sidebar to inspect source code.");
+    }
+}
 void DebugWindowManager::RenderNetworkTab(int px, int py, int pw, int ph) {
     ui->SetCursor(px + pw - 52, py + 4);
     if (ui->Button("Clear", 48, 24).activated) {
@@ -1013,8 +1076,8 @@ bool DebugWindowManager::Render() {
 
     // === Tab bar ===
     ui->SetCursor(4, 4);
-    for (int i = 0; i < 3; ++i) {
-        const char *tabNames[] = {"Console", "Network", "Inspector"};
+    for (int i = 0; i < 4; ++i) {
+        const char *tabNames[] = {"Console", "Network", "Scripts", "Inspector"};
         std::string tabTitle = tabNames[i];
         if (ui->Tab(std::string("dbtab_") + tabNames[i], tabTitle, activeTab == i, 90, 26)) {
             activeTab = i;
@@ -1050,7 +1113,10 @@ bool DebugWindowManager::Render() {
             break;
         case 1: RenderNetworkTab(0, contentY, W, contentH);
             break;
-        case 2: RenderInspectorTab(0, contentY, W, contentH);
+        case 2: // <-- Hook your new view here
+            RenderScriptsTab(0, contentY, W, contentH);
+            break;
+        case 3: RenderInspectorTab(0, contentY, W, contentH);
             break;
         default: break;
     }
@@ -1062,7 +1128,7 @@ bool DebugWindowManager::Render() {
 }
 
 const Node *DebugWindowManager::GetSelectedNode() const {
-    if (activeTab == 2) {
+    if (activeTab == 3) {
         return selectedNode;
     }
     return nullptr;

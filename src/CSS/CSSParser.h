@@ -32,5 +32,8 @@ private:
     bool Matches(const CSSSelector& sel, const Node& node);
     void ApplyDeclarations(const std::vector<CSSDeclaration>& decls, Node& node,
                        int viewportWidth, int viewportHeight);
+
+    void ApplyProperties(Node &node, int vw, int vh);
+
     void ApplyToTree(const std::vector<CSSRule> &rules, Node &node, int vw, int vh);
 };

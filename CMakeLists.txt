@@ -95,6 +95,19 @@ add_executable(Browser
         src/Node/CSSLength.h
         src/CSS/CSSColor.h
         src/CSS/CSSColor.cpp
+        src/JavaScriptEngine/Modules/IEngineModule.h
+        src/JavaScriptEngine/Modules/DOMBridge.cpp
+        src/JavaScriptEngine/Modules/DOMBridge.h
+        src/JavaScriptEngine/Modules/ConsoleBridge.cpp
+        src/JavaScriptEngine/Modules/ConsoleBridge.h
+        src/JavaScriptEngine/Modules/DOMStyle.h
+        src/JavaScriptEngine/Modules/DOMStyle.cpp
+        src/JavaScriptEngine/Modules/Vars/TextEncoder.cpp
+        src/JavaScriptEngine/Modules/Vars/TextEncoder.h
+        src/JavaScriptEngine/Modules/Domutils.cpp
+        src/JavaScriptEngine/Modules/Domutils.h
+        src/JavaScriptEngine/Modules/Vars/Timers.cpp
+        src/JavaScriptEngine/Modules/Vars/Timers.h
 )
 
 # Target Include Directories

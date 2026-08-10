@@ -316,6 +316,9 @@ struct Style {
     StyleSetFlags set;
 
     FlexData flex;
+
+
+
 };
 
 // ============================================================
@@ -386,7 +389,7 @@ struct Node {
     // Safe because parent owns children through unique_ptr.
     Node* parent = nullptr;
 
-    std::vector<std::unique_ptr<Node>> children;
+    std::vector<std::unique_ptr<Node>> children{};
 
     // --------------------------------------------------------
     // Attributes
@@ -436,6 +439,8 @@ struct Node {
 
     bool reconstruct = false;
 
+
+    std::unordered_map<std::string, std::string> style_properties;
     // --------------------------------------------------------
     // Lifetime
     // --------------------------------------------------------

@@ -232,14 +232,30 @@ void CSSParser::ApplyDeclarations(const std::vector<CSSDeclaration> &decls,
                                   int vw,
                                   int vh)
 {
+
+    for (const auto& d : decls) {
+        std::string_view p = d.property;
+        std::string_view v = d.value;
+
+
+        node.style_properties[std::string(p)] = std::string(v);
+    }
+    ApplyProperties(node, vw, vh);
+
+}
+
+void CSSParser::ApplyProperties(Node &node,
+                                  int vw,
+                                  int vh) {
+
     std::vector<std::string_view> parts;
     parts.reserve(8); // Avoid reallocation inside layout splits
 
-    for (const auto& d : decls)
+        for (const auto& d : node.style_properties)
     {
-        std::string_view p = d.property;
-        std::string_view v = d.value;
-        parts.clear();
+            parts.clear();
+        std::string_view p = d.first;
+        std::string_view v = d.second;
 
         // ── color / background ───────────────────────────────────────────────
         switch (HashProperty(p)) {

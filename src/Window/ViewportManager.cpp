@@ -25,10 +25,10 @@ using namespace Engine::UI;
 
 // Clean standalone translation internal helpers
 namespace {
-    void FixParentPointers(Node& node) {
-        for (auto& child : node.children) {
-            child->parent = &node;
-            FixParentPointers(*child);
+    void FixParentPointers(Node*node) {
+        for (auto& child : node->children) {
+            child->parent = node;
+            FixParentPointers(child.get());
         }
     }
 
@@ -104,7 +104,7 @@ ViewportManager::ViewportManager(const int width, const int height, JavaScriptEn
       layoutRenderer(renderer, fallbackFont),
     plat(platform)
 {
-    tabContext = engine.create_tab_context();
+
 }
 
 ViewportManager::~ViewportManager() {
@@ -136,6 +136,11 @@ LayoutBox* ViewportManager::HitTest(int x, int y) {
     return layoutRenderer.HitTest(x, y);
 }
 
+std::vector<EventListener> ViewportManager::GetWindowListeners(const std::string &type) {
+    return windowListeners[type];
+}
+
+
 void ViewportManager::FindTitle() {
     if (auto title_node = Parser::FindNodeByTag(&dom, "title")) {
         for (auto &c : title_node->children) {
@@ -154,13 +159,15 @@ void ViewportManager::Init() {
         exit(1);
     }
 
+
     CurlGrabber::Init();
     std::filesystem::create_directories(std::filesystem::current_path().string() + "/cache");
 
     std::string response = cache.GetResource(CurrentLink);
     auto tokens = tokenizer.tokenize(response);
     dom = parser.Parse(tokens);
-    
+    FixParentPointers(&dom);
+    tabContext = engine.create_tab_context(CurrentLink, &dom);
     FindTitle();
     ApplyAndLayout();
 }
@@ -175,7 +182,7 @@ void ViewportManager::Update() {
         LinkChanged = false;
         if (tabContext) {
             engine.destroy_tab_context(tabContext);
-            tabContext = engine.create_tab_context();
+            tabContext = engine.create_tab_context(CurrentLink, &dom);
         }
         Init();
     }
@@ -183,9 +190,28 @@ void ViewportManager::Update() {
     UpdateNeeded |= NeedReconstruct(&dom);
 
     if (UpdateNeeded) {
+        Rendered = true;
         UpdateNeeded = false;
+
+        CSSParser cssParser;
+        std::vector<CSSRule> rules;
+
+        CollectStyles(dom, cssParser, cache, CurrentLink, rules);
+
+        // 2. Reset Styles
+        std::function<void(Node&)> resetStyles = [&](Node& node) {
+            node.specifiedStyle = Style{};
+            for (auto& child : node.children) resetStyles(*child);
+        };
+        resetStyles(dom);
+
+        // 3. Apply CSS & Compute Styles
+        cssParser.Apply(rules, dom, renderer.GetWidth(), renderer.GetHeight());
+        ComputeStyle(dom);
+
         FindTitle();
-        FixParentPointers(dom);
+        FixParentPointers(&dom);
+        ComputeStyle(dom);
         layout.Update(dom);
     }
 }
@@ -198,54 +224,99 @@ void ViewportManager::Resize(int width, int height) {
 }
 
 void ViewportManager::Step() {
-    JavascriptFunctions::SetNewContext({&dom});
-    engine.set_active_context(tabContext);
+    JavascriptFunctions::SetNewContext({&dom, &title, 0, windowListeners});
+    engine.set_active_context(tabContext, CurrentLink);
     engine.Step();
 }
 
 void ViewportManager::Render() {
     auto& root = layout.GetRoot();
-    
-    // Delegate complex text highlight tracking tree manipulations to UI sub-module
+
 
     TextSelector::UpdateAndApplySelection(root, IO, selection, layoutRenderer, plat);
 
     layoutRenderer.RenderRoot(root);
 }
+void ViewportManager::CollectStyles(
+    Node& node,
+    CSSParser& cssParser,
+    BrowserCacheManager& cache,
+    const std::string& currentLink,
+    std::vector<CSSRule>& rules)
+{
+    auto it = node.attributes.find("rel");
 
+    if (node.HasAttribute("style") ||
+        (node.type == NodeType::Element &&
+         (node.tag == "style" ||
+          (it != node.attributes.end() &&
+           it->second == "stylesheet"))))
+    {
+        if (node.HasAttribute("style")) {
+            auto parsed = cssParser.Parse(
+                node.GetAttribute("style"),
+                true
+            );
+
+            rules.insert(
+                rules.end(),
+                parsed.begin(),
+                parsed.end()
+            );
+        }
+
+        if (it != node.attributes.end()) {
+            auto ref = node.attributes.find("href");
+
+            if (ref != node.attributes.end()) {
+                std::string res = cache.GetResource(
+                    ResolveUrl(currentLink, ref->second)
+                );
+
+                auto parsed = cssParser.Parse(res, false);
+
+                rules.insert(
+                    rules.end(),
+                    parsed.begin(),
+                    parsed.end()
+                );
+            }
+        }
+
+        for (auto& child : node.children) {
+            if (child->type == NodeType::Text) {
+                auto parsed = cssParser.Parse(
+                    child->text,
+                    false
+                );
+
+                rules.insert(
+                    rules.end(),
+                    parsed.begin(),
+                    parsed.end()
+                );
+            }
+        }
+    }
+
+    for (auto& child : node.children) {
+        CollectStyles(
+            *child,
+            cssParser,
+            cache,
+            currentLink,
+            rules
+        );
+    }
+}
 void ViewportManager::ApplyAndLayout() {
-    JavascriptFunctions::SetNewContext({&dom, &title});
+    scriptEntries.clear();
+    JavascriptFunctions::SetNewContext({&dom, &title, 0, windowListeners});
 
     CSSParser cssParser;
     std::vector<CSSRule> rules;
 
-    // 1. Collect Styles
-    std::function<void(Node&)> collectStyles = [&](Node& node) {
-        auto it = node.attributes.find("rel");
-        if (node.HasAttribute("style") || (node.type == NodeType::Element && (node.tag == "style" || (it != node.attributes.end() && it->second == "stylesheet")))) {
-            if (node.HasAttribute("style")) {
-                auto parsed = cssParser.Parse(node.GetAttribute("style"), true);
-                rules.insert(rules.end(), parsed.begin(), parsed.end());
-            }
-            if (it != node.attributes.end()) {
-                auto ref = node.attributes.find("href");
-                if (ref != node.attributes.end()) {
-                    std::string res = cache.GetResource(ResolveUrl(CurrentLink, ref->second));
-                    auto parsed = cssParser.Parse(res, false);
-                    rules.insert(rules.end(), parsed.begin(), parsed.end());
-                }
-            }
-            for (auto& child : node.children) {
-                if (child->type == NodeType::Text) {
-                    for (auto& rule : cssParser.Parse(child->text, false)) {
-                        rules.push_back(rule);
-                    }
-                }
-            }
-        }
-        for (auto& child : node.children) collectStyles(*child);
-    };
-    collectStyles(dom);
+    CollectStyles(dom, cssParser, cache, CurrentLink, rules);
 
     // 2. Reset Styles
     std::function<void(Node&)> resetStyles = [&](Node& node) {
@@ -282,6 +353,7 @@ void ViewportManager::ApplyAndLayout() {
             if (srcIt != node.attributes.end()) {
                 node.code = cache.GetResource(ResolveUrl(CurrentLink, srcIt->second));
                 node.script_name = srcIt->second;
+                scriptEntries.emplace_back(srcIt->second, node.code);
             } else {
                 std::string inlineScript = "";
                 for (auto& child : node.children) {
@@ -289,15 +361,18 @@ void ViewportManager::ApplyAndLayout() {
                 }
                 node.code = inlineScript;
                 node.script_name = "inline";
+                scriptEntries.emplace_back("inline", node.code);
             }
         }
         for (auto& child : node.children) discoverAndRunJavascript(*child);
     };
+
     discoverAndRunJavascript(dom);
 
     // 6. Layout Updates
     layout.Update(dom);
     layoutRenderer.UpdateDom(&dom);
+
 }
 
 void ViewportManager::OnRender(int width, int height) {
@@ -308,7 +383,7 @@ void ViewportManager::OnRender(int width, int height) {
 
 void ViewportManager::RunNodeScripts(Node &node) {
     if (!node.code.empty()) {
-        engine.Run(node.code, node.script_name);
+        engine.Run(node.code, node.script_name, node.attributes.find("type") != node.attributes.end() && node.attributes.at("type") == "module");
     }
     for (auto &child : node.children) {
         RunNodeScripts(*child);
@@ -317,6 +392,6 @@ void ViewportManager::RunNodeScripts(Node &node) {
 
 void ViewportManager::StartScripts() {
     JavascriptFunctions::SetNewContext({&dom, &title});
-    engine.set_active_context(tabContext);
+    engine.set_active_context(tabContext, CurrentLink);
     RunNodeScripts(dom);
 }

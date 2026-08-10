@@ -16,8 +16,8 @@ WindowManager::WindowManager(const int width, const int height)
       debugWindow(std::make_unique<DebugWindowManager>(900, 500)),
       fallbackFontPrimary("Fonts/arial/ARIAL.TTF", 200),
     fallbackFontSymbol("Fonts/segoeui.ttf", 200),
-fallbackFontEmoji("Fonts/seguiemj.ttf", 200),
-fallback(fallbackFontPrimary, fallbackFontSymbol, fallbackFontEmoji)
+fallbackFontEmoji("Fonts/seguiemj.ttf", 200), moduleCache(std::filesystem::current_path().string() + "/cache"),
+fallback(fallbackFontPrimary, fallbackFontSymbol, fallbackFontEmoji), jsEngine(moduleCache)
 {
     platform = CreatePlatform();
 
@@ -35,7 +35,7 @@ fallback(fallbackFontPrimary, fallbackFontSymbol, fallbackFontEmoji)
     platform->SetMinimumSize(500, 500);
     platform->SetTopBarHeight({0, 0, platform->GetWidth(), TOP_WIDTH});
 
-    tabs.push_back({ "Example Domain", "http://localhost:8080/", "Example Domain" });
+    tabs.push_back({ "Example Domain", "http://localhost:5173/", "Example Domain" });
 
     // Cache local asset handles
     minimize = ui_manager->MakeImage("./Assets/Icons/minus.svg", 27, 27);
@@ -64,6 +64,7 @@ fallback(fallbackFontPrimary, fallbackFontSymbol, fallbackFontEmoji)
         tab.manager->Init();
         tab.manager->Update();
     }
+    debugWindow->SetScriptEntries(tabs[activeTabIndex].manager->GetScriptEntries());
 
     OnRender = [this]() {
         renderBackend->BeginFrame();
@@ -78,11 +79,15 @@ fallback(fallbackFontPrimary, fallbackFontSymbol, fallbackFontEmoji)
         UpdateUI();
 
         auto& activeManager = tabs[activeTabIndex].manager;
+        activeManager->Step();
         int targetContentHeight = std::max(0, currentHeight - TOP_WIDTH);
 
         activeManager->Resize(currentWidth, targetContentHeight);
         activeManager->OnRender(currentWidth, targetContentHeight);
-
+        if (activeManager->DOMUpdated()) {
+            FeedDebugDOM();
+            debugWindow->SetScriptEntries(activeManager->GetScriptEntries());
+        }
         // Blit UI layer
         renderer->BlitFrom(*ui_manager->GetRenderer(), 0, 0, 0, 0, renderer->GetWidth(), TOP_WIDTH);
 
@@ -182,7 +187,7 @@ void WindowManager::UpdateUI() {
         if (i + 1 < tabs.size()) ui_manager->SameLine();
     }
 
-    if (ui_manager->SvgButton("plus", plus, 35, 35)) {
+    if (ui_manager->SvgButton("plus", plus, 35, 35).activated) {
         TabState newTab{"New Tab", "https://example.com/", "New Tab", nullptr};
 
         newTab.manager = std::make_unique<ViewportManager>(renderer->GetWidth(), renderer->GetHeight() - TOP_WIDTH, jsEngine, fallback, platform.get());
@@ -201,17 +206,17 @@ void WindowManager::UpdateUI() {
 
     ui_manager->SetCursor(windowWidth - 123, saved.y);
 
-    if (ui_manager->SvgButton("minimize", minimize, 35, 35)) {
+    if (ui_manager->SvgButton("minimize", minimize, 35, 35).activated) {
         platform->MinimizeWindow();
     }
     ui_manager->SameLine(0);
 
-    if (ui_manager->SvgButton("minmax", platform->Is_WindowZoomed() ? Return : maximize, 35, 35)) {
+    if (ui_manager->SvgButton("minmax", platform->Is_WindowZoomed() ? Return : maximize, 35, 35).activated) {
         platform->MaximizeOrRestoreWindow();
     }
     ui_manager->SameLine(0);
 
-    if (ui_manager->SvgButton("close", close, 35, 35)) {
+    if (ui_manager->SvgButton("close", close, 35, 35).activated) {
         if (debugWindow->IsOpen()) debugWindow->Close();
         platform->CloseWindow();
     }
@@ -225,22 +230,23 @@ void WindowManager::UpdateUI() {
     ui_manager->AdvanceCursorY(6);
     auto& activeManager = tabs[activeTabIndex].manager;
 
-    if (ui_manager->SvgButton("backward", back, 28, 28)) {}
+    if (ui_manager->SvgButton("backward", back, 28, 28).activated) {}
     ui_manager->SameLine();
-    if (ui_manager->SvgButton("forward", forward, 28, 28)) {}
+    if (ui_manager->SvgButton("forward", forward, 28, 28).activated) {}
     ui_manager->SameLine();
-    if (ui_manager->SvgButton("refresh", reload, 28, 28)) {
+    if (ui_manager->SvgButton("refresh", reload, 28, 28).activated) {
         CurlGrabber::ResetLog();
         activeManager->SetLink(tabs[activeTabIndex].url);
         activeManager->Update();
         activeManager->StartScripts();
         FeedDebugDOM();
+        debugWindow->SetScriptEntries(activeManager->GetScriptEntries());
     }
     ui_manager->SameLine();
 
     int remainingWidth = std::max(200, renderer->GetWidth() - 130);
     std::string& activeUrl = tabs[activeTabIndex].url;
-    if (ui_manager->AddressBar("URLInput", activeUrl, remainingWidth, 28)) {
+    if (ui_manager->AddressBar("URLInput", activeUrl, remainingWidth, 28).activated) {
         CurlGrabber::ResetLog();
         activeManager->SetLink(activeUrl);
         activeManager->Update();

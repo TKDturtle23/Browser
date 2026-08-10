@@ -1,12 +1,17 @@
 #include "JavaScriptEngine.h"
 
 #include <iostream>
+#include <utility>
+
+#include "Modules/ConsoleBridge.h"
+#include "Modules/DOMBridge.h"
 
 std::string Test_function(const std::string& str) {
     return str + "Testing worked!";
 }
-JavaScriptEngine::JavaScriptEngine() {
-
+JavaScriptEngine::JavaScriptEngine(BrowserCacheManager &cache) : qjs_engine(cache) {
+    qjs_engine.register_module(std::make_unique<DOMBridge>(qjs_engine));
+    qjs_engine.register_module(std::make_unique<ConsoleBridge>());
 }
 
 JavaScriptEngine::~JavaScriptEngine() {
@@ -36,8 +41,8 @@ void JavaScriptEngine::InjectData() {
 
 }
 
-std::string JavaScriptEngine::Run(const std::string &script_data, const std::string &script_name) {
-    return qjs_engine.execute(script_data, script_name);
+std::string JavaScriptEngine::Run(const std::string &script_data, const std::string &script_name, bool IsModule) {
+    return qjs_engine.execute(script_data, script_name, IsModule);
 }
 
 bool JavaScriptEngine::Step() const {
@@ -50,12 +55,35 @@ void JavaScriptEngine::RunAll() const {
 
 
 
-JSContext * JavaScriptEngine::create_tab_context() {
-    return qjs_engine.create_tab_context();
+JSContext * JavaScriptEngine::create_tab_context(std::string URL, Node *DOM) {
+    return qjs_engine.create_tab_context(std::move(URL),  DOM);
 }
 
-void JavaScriptEngine::set_active_context(JSContext *ctx) {
-    qjs_engine.set_active_context(ctx);
+void JavaScriptEngine::DispatchEvent(const std::vector<EventListener> &Listeners, const std::string &type) {
+    auto ctx = qjs_engine.get_active_context();
+    JSValue eventObj = JS_NewObject(ctx);
+
+    JS_SetPropertyStr(
+        ctx,
+        eventObj,
+        "type",
+        JS_NewString(ctx, type.c_str()));
+
+    for (auto& listener : Listeners)
+    {
+        JS_Call(
+            ctx,
+            listener.callback,
+            JS_UNDEFINED,
+            1,
+            &eventObj);
+    }
+
+    JS_FreeValue(ctx, eventObj);
+}
+
+void JavaScriptEngine::set_active_context(JSContext *ctx, const std::string &url) {
+    qjs_engine.set_active_context(ctx, url);
 }
 
 

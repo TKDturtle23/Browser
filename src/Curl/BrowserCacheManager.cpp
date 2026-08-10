@@ -119,7 +119,7 @@ static std::string GetHeaderValueValueInsensitive(const std::map<std::string, st
     return "";
 }
 
-std::string BrowserCacheManager::GetResource(const std::string& url) {
+std::string BrowserCacheManager::GetResource(const std::string& url, bool RetEmpty) {
     std::string urlHash = HashUrl(url);
     long long currentTime = GetCurrentUnixTime();
 
@@ -153,7 +153,9 @@ std::string BrowserCacheManager::GetResource(const std::string& url) {
             if (!staleCache.empty()) {
                 return staleCache;
             }
-
+            if (RetEmpty) {
+                return "";
+            }
             return LoadOfflinePage();
         }
         std::string cacheControl = GetHeaderValueValueInsensitive(response.headers, "cache-control");
@@ -188,6 +190,9 @@ std::string BrowserCacheManager::GetResource(const std::string& url) {
     // NETWORK FAILURE
     if (response.status_code <= 0) {
         LOG_VERBOSE("[NETWORK ERROR] Loading offline page.");
+        if (RetEmpty) {
+            return "";
+        }
         return LoadOfflinePage();
     }
     std::string cacheControl = GetHeaderValueValueInsensitive(response.headers, "cache-control");
@@ -220,6 +225,9 @@ std::string BrowserCacheManager::GetResource(const std::string& url) {
     }
     // Non-200 responses fallback
     if (response.status_code != 200) {
+        if (RetEmpty) {
+            return "";
+        }
         return LoadOfflinePage();
     }
 

@@ -7,6 +7,7 @@
 #include "../Curl/BrowserCacheManager.h"
 #include "../Layout/LayoutGenerator.h"
 #include "../Render/Renderer.h"
+#include "CSS/CSSParser.h"
 #include "JavaScriptEngine/JavaScriptEngine.h"
 #include "Layout/LayoutRenderer.h"
 
@@ -61,6 +62,9 @@ public:
 
     void Render();
 
+    void CollectStyles(Node &node, CSSParser &cssParser, BrowserCacheManager &cache, const std::string &currentLink,
+                       std::vector<CSSRule> &rules);
+
     void OnRender(int width, int height); // for resizing
     void RunNodeScripts(Node &node);
 
@@ -72,7 +76,20 @@ public:
     const Node* GetDOMRoot() const {return &dom; }
     std::string GetTitle() {return title.empty() ? CurrentLink : title; }
     LayoutBox *HitTest(int x, int y);
+    JSContext* GetContext() const { return tabContext; }
+    std::vector<EventListener> GetWindowListeners(const std::string &type);
+    inline bool DOMUpdated() {
+        if (Rendered) {
+            Rendered = false;
+            return true;
+        }
+        return false;
+    }
+    std::vector<std::pair<std::string, std::string>> GetScriptEntries() {
+        return scriptEntries;
+    }
 private:
+    std::vector<std::pair<std::string, std::string>> scriptEntries;
     Platform *plat;
     std::string title;
     void FindTitle();
@@ -80,8 +97,11 @@ private:
     bool LinkChanged = false;
     bool UpdateNeeded = false;
     void ApplyAndLayout();
+    bool Rendered;
 
     JSContext* tabContext; // Each tab retains its unique context key handler pointer
+    std::unordered_map<std::string, std::vector<EventListener>> windowListeners;
+
     RendererSurface renderer;
     Tokenizer tokenizer;
     Parser parser;

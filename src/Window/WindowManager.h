@@ -46,7 +46,7 @@ public:
 
 private:
     void UpdateUI();
-
+    BrowserCacheManager moduleCache;
     // Structural Graphics Engine Dependencies
     std::shared_ptr<IRenderBackend> renderBackend;
     WindowID renderWindow = 0;

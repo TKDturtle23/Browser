@@ -13,7 +13,7 @@ public:
     ~BrowserCacheManager();
 
     // The clean primary interface for your browser engine
-    std::string GetResource(const std::string& url);
+    std::string GetResource(const std::string& url, bool RetEmpty = false);
 
 private:
     std::string cacheDirectory;

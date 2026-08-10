@@ -450,12 +450,8 @@ void ComputeStyle(Node& node, const Style* parentStyle)
         ComputeStyle(*child, &node.computedStyle);
     }
 }
-
-Node Parser::Parse(const std::vector<Token>& tokens)
+static void ParseInto(Node& root, const std::vector<Token>& tokens)
 {
-    Node root;
-    root.type = NodeType::Document;
-
     std::stack<Node*> nodeStack;
     nodeStack.push(&root);
 
@@ -533,9 +529,6 @@ Node Parser::Parse(const std::vector<Token>& tokens)
 
             case TokenType::CloseTag:
             {
-                if (nodeStack.size() <= 1)
-                    break;
-
                 while (nodeStack.size() > 1)
                 {
                     Node* top = nodeStack.top();
@@ -549,16 +542,32 @@ Node Parser::Parse(const std::vector<Token>& tokens)
             }
 
             default:
-                std::cout << "Unknown token type\n";
                 break;
         }
     }
+}
+Node Parser::Parse(const std::vector<Token>& tokens)
+{
+    Node root;
+    root.type = NodeType::Document;
+
+    ParseInto(root, tokens);
 
     NormalizeDOM(root);
 
     return root;
 }
+std::vector<std::unique_ptr<Node>>
+Parser::ParseFragment(const std::vector<Token>& tokens)
+{
+    Node root;
+    root.type = NodeType::Element;
+    root.tag = "__fragment__";
 
+    ParseInto(root, tokens);
+
+    return std::move(root.children);
+}
 void Parser::PrintNode(const Node& node, int depth)
 {
     for (int i = 0; i < depth; i++)

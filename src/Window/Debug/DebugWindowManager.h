@@ -85,7 +85,7 @@ public:
 
     const Node *GetSelectedNode() const;
     bool Redraw();
-
+    void SetScriptEntries(const std::vector<std::pair<std::string, std::string>>& scripts);
     void HandleEvent(const Event& event);
     bool NeedsClosing() { return NeedsClose;}
     bool NeedsRedraw() { return redrawRequested; }
@@ -107,7 +107,9 @@ private:
 
     // Builds style rows for the currently selected inspector node.
     void BuildStyleRows();
-
+    std::vector<std::pair<std::string, std::string>> scriptEntries; // { filename, content }
+    int selectedScriptIndex = -1;
+    bool scriptsDirty = false;
     // --- Platform & UI ------------------------------------------------------
     std::shared_ptr<IRenderBackend> renderBackend;
     WindowID renderWindow = 0;
@@ -140,6 +142,8 @@ private:
     std::vector<DebugNetEntry> netEntries;
     std::vector<DebugListRow>       networkRows;
     bool networkRowsDirty = true;
+    // Add to your public or private methods:
+    void RenderScriptsTab(int px, int py, int pw, int ph);
 
     void RebuildNetworkRows();
 
